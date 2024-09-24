@@ -221,65 +221,7 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
         
 
 def mapper_3D(filepath:str, resolution:list) -> pd.DataFrame:
-    '''
-    Process a 3D data file by interpolating the variables onto a regularly spaced grid defined by the resolution.
-    Time column will be dropped. NaN values will be converted to 0. 
-    Points out of the original data range will be converted to NaN.
-
-    (We have tried to store the data into a tensor, but it proves to not be the best choice, because it is really hard to drop points.)
-
-    Args:
-        filepath: Path of that data.
-        resolution: Resolution in format [x_res, y_res, z_res].
-
-    Returns: 
-        interpolated_df: the Pandas dataframe of that data.
-    '''
-    '''The code is simular to mapper_2D, so the comment will not be as detailed s the previous function.'''
-    # From slicing, know what vars to be plotted
-    var_ranges, _ = preliminary_processing.get_info(filepath)
-    
-    # Prepare mesh grid
-    grid_x, grid_y, grid_z = (np.linspace(var_ranges[var][0], var_ranges[var][1], res) for var, res in zip(['x', 'y', 'z'], resolution)) # Generate 3 arrays of coords
-    mesh_grid_x, mesh_grid_y, mesh_grid_z = np.meshgrid(grid_x, grid_y, grid_z) # Repeat elements in grid_x, y, and z
-    coordinates = np.stack((mesh_grid_x.ravel(), mesh_grid_y.ravel(), mesh_grid_z.ravel()), axis=-1) # Flatten mesh_grid_x, y and z, and stack them.
-
-    # Define columns to read
-    columns_to_read = [col for col in var_ranges.keys() if col not in 'time_derivative/conn_based/mesh_time'] # Excluding
-    indices = [i for i, var in enumerate(var_ranges.keys()) if var in columns_to_read]
-    interpolated_results = []
-
-    # I planned to make the data process be in batches, but it shows that then it can't deal with the boundry of batches,
-    # making the data blurred and behaving strangely. So I deleted the batch part.
-    batch = pd.read_csv(filepath, skiprows=1+2*len(var_ranges), delimiter=r'\s+|,', header=None, names=columns_to_read, usecols=indices, engine='python')
-    '''
-    Skip header lines.
-    Delimiters are whitespace or comma.
-    No header present in the CSV.
-    Provide column names for the data.
-    Only read data in indicated indices.
-    Avoid error message, since regular expression is used.
-    '''
-    batch.fillna(0, inplace=True)# Replace NaNs with zero
-    batch.drop_duplicates(subset=['x', 'y', 'z'], inplace=True)
-    points = batch[['x', 'y', 'z']].values
-    interpolated_batch = np.full((coordinates.shape[0], len(columns_to_read)), np.nan)
-
-    # Interpolation for each column
-    for i, col in enumerate(columns_to_read):
-        values = batch[col].values
-        grid_data = scipy.interpolate.griddata(points, values, coordinates, method='linear', fill_value=np.nan)# For grid points out of the range, add NaN as their value (For instance, when slicing direction is z.)
-        interpolated_batch[:, i] = grid_data
-    # Store interpolated results in a list
-    interpolated_results.append(interpolated_batch)
-    
-    # Concatenate all interpolated results and convert them into a DataFrame
-    final_data = np.concatenate(interpolated_results, axis=0)
-    interpolated_df = pd.DataFrame(final_data, columns=columns_to_read)
-    interpolated_df = interpolated_df.reset_index(drop=True)
-    # Return the final interpolated DataFrame
-    print("Finished mapping this data to your specified resolution.")
-    return interpolated_df
+    pass
 
 
 def mapper(datas_object:preliminary_processing.Datas, filepath:str, resolution:list) -> pd.DataFrame:
