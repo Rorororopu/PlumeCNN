@@ -29,16 +29,14 @@ class Data(preliminary_processing.Datas):
 
     Arg:
         path: The corresponding file path for that time step.
-        paths: The complete list of file paths.
+        resolution: The resolution to be plotted. If not specified, the program will ask the user to input it.
+        paths: The complete list of file paths. If not specified, it is [path].
 
     Properties:
         self.df: Its corresponding Pandas dataframe.
         self.time: A float value representing its time value.
         self.var_ranges: A dictionary in format {varname:[min, max], ...}. Time, x, y, and z is not included.
         self.resolution: a list in format [resol1, resol2(, maybe resol3)]. If it is none, it means the user have to manually input the resolution in the terminal.
-        
-
-
 
     Methods:
         self.pandas_to_numpy: Convert pandas table to 2D/3D numpy array for gradient calculation
@@ -216,7 +214,9 @@ class Data(preliminary_processing.Datas):
         self.calculate_gradients('z_velocity')
 
 
-    def __init__(self, path:str, paths:list, resolution:list = None):
+    def __init__(self, path:str, resolution:list = None, paths:list = None):
+        if paths == None:
+            paths= [path]
         super().__init__(paths)
 
         var_ranges, _ = preliminary_processing.get_info(path)
