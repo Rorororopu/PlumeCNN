@@ -52,7 +52,7 @@ The last one is a movie (Sadly, currently not in use). If you want to output a t
 
 - Open the simulation result in `VisIt`. You can choose to slice the data perpendicular to x/y/z axis. Currently PlumeCNN only supports 3D database and database sliced perpendicular to x, y, or z axis.
 
-- In `VisIt`, Click `File - Export Database`, in `Xmdv` format. You can choose to use either comma or space to separate in the databse.
+- In `VisIt`, Click `File - Export Database`, in `Xmdv` format. The delimiter is whitespace in default. You can also specify to change the delimiter to comma.
 
     Below are variables you **must** export, regardless of sequence:
 
