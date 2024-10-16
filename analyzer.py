@@ -66,7 +66,6 @@ class Data(preliminary_processing.Datas):
         ranges[ranges == 0] = 1
 
         self.df[var] = (self.df[var] - min_vals[var_names.index(var)]) / ranges[var_names.index(var)] * (range[1] - range[0]) + range[0]
-        print("Finished regularizing this data.")
 
 
     def pandas_to_numpy(self, var: str) -> np.ndarray:
@@ -131,7 +130,6 @@ class Data(preliminary_processing.Datas):
         elif len(coord_cols) == 3:
             array[indices[:, 0], indices[:, 1], indices[:, 2]] = var_values
 
-        print("Finished converting.")
         return array.T  # Attached from debugging
 
 

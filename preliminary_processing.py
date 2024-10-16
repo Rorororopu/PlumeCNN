@@ -63,14 +63,6 @@ def get_info(filepath: str) -> typing.Tuple[dict, int]:
         exit(1)
     
     try:
-        # Identify how many variables from the header of database
-        print(f"Trying to read the file at {filepath}...")
-        
-    except (IndexError, ValueError):
-        print("\033[91mError: The file format is incorrect. Expected a header with the number of variables.\033[0m")
-        exit(1)
-    
-    try:
         header = lines[0].split() # Get a list
         num_vars = int(header[0])
         
@@ -82,14 +74,12 @@ def get_info(filepath: str) -> typing.Tuple[dict, int]:
 
     try:
         # Read variable ranges, output in format {varname:(min, max), ...}
-        print(f"Trying to obtain the range of variables of the file at {filepath}...")
         var_ranges = {}
         for i in range(num_vars):
             range_line = lines[num_vars + 1 + i].split()
             min_val, max_val = float(range_line[0]), float(range_line[1])
             var_ranges[var_name[i]] = [min_val, max_val]
 
-        print(f"Trying to obtain the number of grid points of the file at {filepath}...")
         header = lines[0].split()
         grid_num = int(header[1])
 
@@ -97,7 +87,7 @@ def get_info(filepath: str) -> typing.Tuple[dict, int]:
         print("\033[91mError: The file format is incorrect. Not enough range data or invalid range values found.\033[0m")
         exit(1)
 
-    print(f"Obtained variable ranges of the file at {filepath}.")
+    print(f"Obtained metadata of the file at {filepath}.")
 
     return var_ranges, grid_num
 
@@ -118,7 +108,6 @@ def calculate_slicing(var_ranges: dict) -> str:
         If column 'x', 'y' or 'z' is not found, prompt the user and kill the program.
     '''
     # Check if 'x', 'y', and 'z' keys are in the dictionary
-    print("Trying to determine if the data is sliced...")
     if not all(key in var_ranges.keys() for key in ['x', 'y', 'z']):
         print("\033[91mError: Elements titled 'x', 'y', and 'z' must be found in the input dictionary.\033[0m")
         exit(1) # Kill the program due to error
