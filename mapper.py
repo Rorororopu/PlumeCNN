@@ -249,7 +249,7 @@ def mapper_2D(filepath:str, resolution:list, use_comma:bool = False) -> pd.DataF
 
 
 # Codes below are functions tools for interpolation of 3D data, because if we interpolate the 3D data directly, the Bletchley will be out of memory and will take forever to finish this task.
-def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, first_line: str = None) -> typing.Tuple[bool, str]:
+def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, row_count: int = 0, first_line: str = None) -> typing.Tuple[bool, str, int]:
     '''
     Splits the original 3D data file into separate files, each containing data for one z-coordinate slice (not unique, many files are having same z-coordinate).
     The function processes of one section with same z-coordinate per iteration, saves it in a temp file.
@@ -259,11 +259,13 @@ def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, first
         index: This is appended to the filename, indicating this is which iteration.
         dir_path: Path to the directory where the temporary files (z-slices) will be saved.
         z_index: The index of the z-coordinate column, e.g. if z_index = 2, the z-coordinate is at the 3rd column.
-        first_line: (Optional) If provided, use this line as the first line for this iteration. Without this parameter, the line to cause the break will not be recorded in any file, that's not what we want.
+        row_count: number of rows that have been processed
+        first_line: If provided, use this line as the first line for this iteration. Without this parameter, the line to cause the break will not be recorded in any file, that's not what we want.
     
     Returns:
         bool: True if the end of the file is reached, otherwise False.
         str: The line that caused the break, so it can be passed to the next iteration.
+        int: number of rows that have been processed
     '''
     # Prepare the output file path
     base_filename = os.path.basename(file.name).rsplit('.', 1)[0]
@@ -276,9 +278,10 @@ def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, first
             first_line = file.readline().strip()  # Read the first line if not provided
 
         if not first_line:  # If the file is empty or we reached EOF
-            return True, None
+            return True, None, row_count
 
         outfile.write(first_line + '\n')  # Write the first line to the new file
+        row_count += 1
         z_value = first_line.split()[z_index]  # Get the z-coordinate from the first line
 
         # Process subsequent lines
@@ -288,11 +291,12 @@ def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, first
 
             if current_z_value == z_value:
                 outfile.write(line + '\n')
+                row_count += 1
             else:
-                return False, line  # Return the current line as it caused the break
+                return False, line, row_count  # Return the current line as it caused the break
 
     # If we processed all lines with the same z-coordinate, return success
-    return True, None
+    return True, None, row_count
 
 
 def mapper_z_slice(filepath:str, resolution:list, var_ranges: dict, use_comma:bool = False) -> pd.DataFrame:
@@ -375,23 +379,26 @@ def mapper_3D(filepath: str, resolution: list, use_comma: bool = False):
     ''' os.makedirs(csv_dir, exist_ok=True)'''
 
     # Get the variable ranges from the file, find which column represents z coordinate
-    var_ranges, _ = preliminary_processing.get_info(filepath)
+    var_ranges, grid_num = preliminary_processing.get_info(filepath)
     z_index = list(var_ranges.keys()).index('z')
 
     # Split the original file to many little files, each file containing same z coordinates, although different file may have same coordinates
     with open(filepath, 'r') as file:
         start_line = 1 + 2 * len(var_ranges)  # Start after the metadata and ranges
         index = 0
+        row_count = 0
         first_line = None # "lookahead" approach
         for _ in range(start_line):
             next(file)
         while True:
             # Split one z slice into one temp file
-            end_of_file, first_line = okc_splitter(file, index, tmp_dir, z_index, first_line)
+            end_of_file, first_line, row_count = okc_splitter(file, index, tmp_dir, z_index, row_count, first_line)
+            print(f"\rsplitting the original file to z slices... {row_count}/{grid_num}", end='', flush=True)
             if end_of_file:  # Ensure we break if we reached the end
                 break
             index += 1 # Update start_line and index for the next slice
-
+        print("\nDone!")
+    
 
 def mapper(datas_object:preliminary_processing.Datas, filepath:str, resolution:list) -> pd.DataFrame:
     '''
