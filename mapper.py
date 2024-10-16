@@ -27,8 +27,11 @@ To mitigate this, we propose a more efficient step-by-step I/O approach to handl
 
    - For each series of same z-coordinate(not including all data points of that coordinate), export the corresponding 2D grid of data points into an okc file.
 
-1.2 Merging separated z-slices
+1.2 Merge separated z slices
     Merge z-slices with same z-coordinates together.
+
+1.3 Interpolate completed z slices
+
 
 There will also be a dictionary organizing these files, in format {<prefix>_0:Data(path_0), <prefix>_1:Data(path_1), ...}
 The prefix is named by user.
@@ -333,7 +336,6 @@ def okc_merge(folder_path: str, z_index: int):
                 z_coord = file.readline().strip().split()[z_index]
                 
                 # Step 2: Update the z_coord_map.txt with the z_coord and filename
-
                 # Read the z_coord_map.txt file to find if the z_coord already exists
                 if os.path.getsize(z_coord_file) > 0:
                     with open(z_coord_file, 'r') as directory:
@@ -352,7 +354,6 @@ def okc_merge(folder_path: str, z_index: int):
                         new_line = f"{z_coord}:[{', '.join(file_paths)}]\n"
                         lines[i] = new_line
                         found = True
-                        # REPLACE that old line with new line. Don't create a dictionary to save memory.
                         break  # We found the z_coord, no need to continue
 
                 if not found:
@@ -449,7 +450,6 @@ def mapper_z_slice(filepath:str, resolution:list, var_ranges: dict, use_comma:bo
     interpolated_df = interpolated_df.reset_index(drop=True)
     
     # Return the final interpolated DataFrame
-    print("Finished mapping this z slice to the specified resolution.")
     return interpolated_df
 
 
@@ -472,9 +472,9 @@ def mapper_3D(filepath: str, resolution: list, use_comma: bool = False):
 
     # Create directories for temporary files and interpolated CSVs
     tmp_dir = f"{base_dir}/{filename_without_ext}_tmp"
-    '''csv_dir = f"{base_dir}/{filename_without_ext}_tmp_csv" '''
+    csv_dir = f"{base_dir}/{filename_without_ext}_z_csv"
     os.makedirs(tmp_dir, exist_ok=True)
-    ''' os.makedirs(csv_dir, exist_ok=True)'''
+    os.makedirs(csv_dir, exist_ok=True)
 
     # Get the variable ranges from the file, find which column represents z coordinate
     var_ranges, grid_num = preliminary_processing.get_info(filepath)
@@ -499,6 +499,15 @@ def mapper_3D(filepath: str, resolution: list, use_comma: bool = False):
 
     # Merge files with same z coordinates
     okc_merge(tmp_dir, z_index)
+
+    slices = os.listdir(tmp_dir)
+    index = 0
+    for slice_file in slices:
+        df = mapper_z_slice(f"{tmp_dir}/{slice_file}", [resolution[0], resolution[1]], var_ranges, use_comma)
+        index += 1
+        df.to_csv(f"{csv_dir}/{filename_without_ext}_{index}.csv", index=False)
+        print(f"\rInterpolating z slices... {index}/{len(slices)}", end='', flush=True)
+    print("\nDone!")
 
 
 def mapper(datas_object:preliminary_processing.Datas, filepath:str, resolution:list) -> pd.DataFrame:
