@@ -27,6 +27,8 @@ To mitigate this, we propose a more efficient step-by-step I/O approach to handl
 
    - For each series of same z-coordinate(not including all data points of that coordinate), export the corresponding 2D grid of data points into an okc file.
 
+1.2 Merging separated z-slices
+    Merge z-slices with same z-coordinates together.
 
 There will also be a dictionary organizing these files, in format {<prefix>_0:Data(path_0), <prefix>_1:Data(path_1), ...}
 The prefix is named by user.
@@ -65,7 +67,7 @@ def get_time(var_ranges: dict) -> float:
     return time
 
 
-def get_resolution_2D(datas_object:preliminary_processing.Datas) -> list:
+def get_resolution_2D(datas_object: preliminary_processing.Datas) -> list:
     '''
     Args:
         a datas_object. Only slicing and grid_num attribute is needed.
@@ -95,7 +97,7 @@ def get_resolution_2D(datas_object:preliminary_processing.Datas) -> list:
             print("\033[91mInvalid input. Please input 2 numbers!\033[0m")
     
 
-def get_resolution_3D(datas_object:preliminary_processing.Datas) -> list:
+def get_resolution_3D(datas_object: preliminary_processing.Datas) -> list:
     '''
     It could automatically calculate the resolution.
 
@@ -159,7 +161,7 @@ def get_resolution_3D(datas_object:preliminary_processing.Datas) -> list:
             continue
 
 
-def get_resolution(datas_object:preliminary_processing.Datas) -> list:
+def get_resolution(datas_object: preliminary_processing.Datas) -> list:
     '''
     Args:
         a datas_object. Only slicing and grid_num attribute is needed.
@@ -179,7 +181,7 @@ def get_resolution(datas_object:preliminary_processing.Datas) -> list:
     return resolution
 
 
-def mapper_2D(filepath:str, resolution:list, use_comma:bool = False) -> pd.DataFrame:
+def mapper_2D(filepath: str, resolution: list, use_comma: bool = False) -> pd.DataFrame:
     '''
     Process a sliced data file by interpolating the variables onto a regularly spaced grid defined by the resolution.
     Time and z coordinate columns will be dropped, because it is sliced and VisIt will always make z column be 0. 
@@ -249,7 +251,7 @@ def mapper_2D(filepath:str, resolution:list, use_comma:bool = False) -> pd.DataF
 
 
 # Codes below are functions tools for interpolation of 3D data, because if we interpolate the 3D data directly, the Bletchley will be out of memory and will take forever to finish this task.
-def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, row_count: int = 0, first_line: str = None) -> typing.Tuple[bool, str, int]:
+def okc_split(file: typing.IO, index: int, dir_path: str, z_index: int, row_count: int = 0, first_line: str = None) -> typing.Tuple[bool, str, int]:
     '''
     Splits the original 3D data file into separate files, each containing data for one z-coordinate slice (not unique, many files are having same z-coordinate).
     The function processes of one section with same z-coordinate per iteration, saves it in a temp file.
@@ -297,6 +299,102 @@ def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, row_c
 
     # If we processed all lines with the same z-coordinate, return success
     return True, None, row_count
+
+
+def okc_merge(folder_path: str, z_index: int):
+    '''
+    Merges files that contain the same z-coordinate in a specified column. 
+    Each file is assumed to represent a partial z-slice of data, and multiple files may have the same z-coordinate. 
+    This function consolidates these files into a single file per z-coordinate, appending the contents of files with the same z-coordinate into the first file and then deleting the others.
+
+    Args:
+        folder_path: Path to the directory containing the partial z-slice files.
+        z_index: The index (0-based) of the column that contains the z-coordinate in each file.
+    '''
+
+    z_coord_file = os.path.join(folder_path, 'z_coord_map.txt')  # File to store z-coordinate mapping
+
+    # Ensure z_coord_map.txt exists, or create it if it doesn't
+    if not os.path.exists(z_coord_file):
+        with open(z_coord_file, 'w'):
+            pass  # Create an empty file
+
+    # Step 1: First, scan all files and create the map
+    files = os.listdir(folder_path)
+    index = 0
+
+    for filename in files:
+        file_path = os.path.join(folder_path, filename)
+        
+        # Check if the path is indeed a file and not the z_coord_map.txt itself
+        if os.path.isfile(file_path) and filename != 'z_coord_map.txt':
+            with open(file_path, 'r') as file:
+                # Read the first line and extract the z coordinate at the given index
+                z_coord = file.readline().strip().split()[z_index]
+                
+                # Step 2: Update the z_coord_map.txt with the z_coord and filename
+
+                # Read the z_coord_map.txt file to find if the z_coord already exists
+                if os.path.getsize(z_coord_file) > 0:
+                    with open(z_coord_file, 'r') as directory:
+                        lines = directory.readlines()
+                else:
+                    lines = []
+
+                found = False
+                for i, line in enumerate(lines):
+                    existing_z, file_list = line.strip().split(':', 1)
+                    if existing_z == z_coord:
+                        file_list = file_list.strip('[]')  # Clean the brackets
+                        file_paths = [p.strip() for p in file_list.split(',')] if file_list else []
+                        if file_path not in file_paths:
+                            file_paths.append(file_path)  # Add the new file to the list
+                        new_line = f"{z_coord}:[{', '.join(file_paths)}]\n"
+                        lines[i] = new_line
+                        found = True
+                        # REPLACE that old line with new line. Don't create a dictionary to save memory.
+                        break  # We found the z_coord, no need to continue
+
+                if not found:
+                    # If z_coord was not found, add a new entry for it
+                    new_line = f"{z_coord}:[{file_path}]\n"
+                    lines.append(new_line)
+                    # Write the new line into the file
+
+                # Now, write the updated lines back to z_coord_map.txt
+                with open(z_coord_file, 'w') as directory:
+                    directory.writelines(lines)
+                    index += 1
+
+        print(f"\rChecking the z coordinate of splitted files... {index}/{len(files)-1}", end='', flush=True) # exclude z_coord_file
+    
+    print("\nDone!")
+    
+    # Step 3: Now, merge files based on z-coordinates
+    index = 0
+    with open(z_coord_file, 'r') as directory:
+        lines = directory.readlines()
+
+    for line in lines:
+        z_coord, file_list = line.strip().split(':', 1)
+        file_list = file_list.strip('[]').split(', ')
+        file_list = [f.strip() for f in file_list]
+        
+        # If there is more than one file with the same z coordinate, merge them
+        if len(file_list) > 1:
+            primary_file = file_list[0]
+            for secondary_file in file_list[1:]:
+                with open(secondary_file, 'r') as sec_file, open(primary_file, 'a') as pri_file:
+                    for line in sec_file:
+                        pri_file.write(line)
+
+                # Delete the secondary file after merging
+                os.remove(secondary_file)
+        index += 1
+        print(f"\rMerging files... {index}/{len(lines)}", end='', flush=True)
+
+    os.remove(z_coord_file)
+    print("\nDone!")
 
 
 def mapper_z_slice(filepath:str, resolution:list, var_ranges: dict, use_comma:bool = False) -> pd.DataFrame:
@@ -392,13 +490,16 @@ def mapper_3D(filepath: str, resolution: list, use_comma: bool = False):
             next(file)
         while True:
             # Split one z slice into one temp file
-            end_of_file, first_line, row_count = okc_splitter(file, index, tmp_dir, z_index, row_count, first_line)
+            end_of_file, first_line, row_count = okc_split(file, index, tmp_dir, z_index, row_count, first_line)
             print(f"\rsplitting the original file to z slices... {row_count}/{grid_num}", end='', flush=True)
             if end_of_file:  # Ensure we break if we reached the end
                 break
             index += 1 # Update start_line and index for the next slice
         print("\nDone!")
-    
+
+    # Merge files with same z coordinates
+    okc_merge(tmp_dir, z_index)
+
 
 def mapper(datas_object:preliminary_processing.Datas, filepath:str, resolution:list) -> pd.DataFrame:
     '''
