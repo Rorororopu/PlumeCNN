@@ -6,13 +6,37 @@ The data itself will be stored to a Pandas dataframe (in simple words, a table),
 Time column is deleted. If the data is sliced, its corresponding x, y, or z coordinate will not be included.
 Points out of the original data range will be converted to NaN.
 
+There is more steps to do interpolation for 3D data, because firectly interpolating large 3D datasets can result in excessive memory usage 
+and may let the job takes forever to finish. 
+To mitigate this, we propose a more efficient step-by-step I/O approach to handle the data interpolation while conserving memory.
+
+
+1. Instead of interpolating the entire 3D dataset at once, we will first perform interpolation slice by slice along the z-axis.
+1.1 Z-Slice Separation:  
+   In our simulation, the z-axis grids are evenly spaced, and the data exported via VisIt follows this structure:
+
+   x1, y1, z1\n x2, y2, z1\n ...\n xm, ym, z1\n
+   x1, y1, z2\n x2, y2, z2\n ...\n xm, ym, z2\n ...\n
+   x1, y1, zn\n x2, y2, zn\n ...\n xm, ym, zn\n
+   xa, yn, z1\n xb, yb, z1\n ...\n xc, yc, z1\n
+   xa, ya, z2\n xb, yb, z2\n ...\n xc, yc, z2\n ...\n
+   xa, ya, zn\n xb, yb, zn\n ...\n xc, yc, zn\n
+   (a series of same z coordinates will appear periodically)
+   
+   The following steps outline the process:
+
+   - For each series of same z-coordinate(not including all data points of that coordinate), export the corresponding 2D grid of data points into an okc file.
+
+
 There will also be a dictionary organizing these files, in format {<prefix>_0:Data(path_0), <prefix>_1:Data(path_1), ...}
 The prefix is named by user.
 '''
 
 import numpy as np
+import os
 import pandas as pd
 import scipy.interpolate
+import typing
 import preliminary_processing
 
 
@@ -155,7 +179,7 @@ def get_resolution(datas_object:preliminary_processing.Datas) -> list:
     return resolution
 
 
-def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
+def mapper_2D(filepath:str, resolution:list, use_comma:bool = False) -> pd.DataFrame:
     '''
     Process a sliced data file by interpolating the variables onto a regularly spaced grid defined by the resolution.
     Time and z coordinate columns will be dropped, because it is sliced and VisIt will always make z column be 0. 
@@ -167,6 +191,7 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
     Args:
         filepath: Path of that data.
         resolution: Resolution in format [res1, res2].
+        use_comma: Whether change the delimiter to comma rather than whitespace. False in default.
     
     Returns: 
         interpolated_df: the Pandas dataframe of that data.
@@ -186,28 +211,31 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
     
     # I planned to make the data process be in batches, but it shows that then it can't deal with the boundry of batches,
     # making the data blurred and behaving strangely. So I deleted the batch part. Still, I kept the name `batch`.
-    batch = pd.read_csv(filepath, skiprows=1+2*len(var_ranges), delimiter=r'\s+|,', header=None, names=columns_to_read, usecols=indices, engine='python')     
+    if not use_comma:
+        batch = pd.read_csv(filepath, skiprows=1+2*len(var_ranges), sep=r'\s+', header=None, names=columns_to_read, usecols=indices, engine='c')     
+    else:
+        batch = pd.read_csv(filepath, skiprows=1+2*len(var_ranges), header=None, names=columns_to_read, usecols=indices, engine='c')     
     '''
     Skip header lines.
-    Delimiters are whitespace or comma.
+    Delimiters are whitespace(default setting of my code) or comma(default setting of pandas).
     No header present in the CSV.
     Provide column names for the data.
     Only read data in indicated indices.
-    Avoid error message, since regular expression is used.
+    Use c engine to increase the speed.
     '''
     batch.fillna(0, inplace=True) # Replace NaNs with zero
     points = batch[['x','y']].values
     interpolated_batch = np.full((coordinates.shape[0], len(columns_to_read)), np.nan) # Create an empty array to store interpolated values.
-
-    # Interpolation for each column
+    
     for i, col in enumerate(columns_to_read):
         values = batch[col].values
         # For grid points out of the range, add NaN as their value (For instance, when slicing direction is z.)
         # Filling value with NaNs may cause many problems to fix later, 
         # but it will have bugs, if you fill in other values, for reason unknown.
-        grid_data = scipy.interpolate.griddata(points, values, coordinates, method='linear', fill_value=np.nan)
+        interpolator = scipy.interpolate.LinearNDInterpolator(points, values)
+        grid_data = interpolator(coordinates)
+        grid_data[np.isnan(grid_data)] = np.nan
         interpolated_batch[:, i] = grid_data
-    # Store interpolated results in a list
     interpolated_results.append(interpolated_batch)
 
     # Concatenate all interpolated results and convert them into a DataFrame
@@ -218,68 +246,151 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
     # Return the final interpolated DataFrame
     print("Finished mapping this data to your specified resolution.")
     return interpolated_df
-        
 
-def mapper_3D(filepath:str, resolution:list) -> pd.DataFrame:
+
+# Codes below are functions tools for interpolation of 3D data, because if we interpolate the 3D data directly, the Bletchley will be out of memory and will take forever to finish this task.
+def okc_splitter(file: typing.IO, index: int, dir_path: str, z_index: int, first_line: str = None) -> typing.Tuple[bool, str]:
     '''
-    Process a 3D data file by interpolating the variables onto a regularly spaced grid defined by the resolution.
-    Time column will be dropped. NaN values will be converted to 0. 
-    Points out of the original data range will be converted to NaN.
-
-    (We have tried to store the data into a tensor, but it proves to not be the best choice, because it is really hard to drop points.)
-
+    Splits the original 3D data file into separate files, each containing data for one z-coordinate slice (not unique, many files are having same z-coordinate).
+    The function processes of one section with same z-coordinate per iteration, saves it in a temp file.
+    
     Args:
-        filepath: Path of that data.
-        resolution: Resolution in format [x_res, y_res, z_res].
-
-    Returns: 
-        interpolated_df: the Pandas dataframe of that data.
+        file: Opened file object of the original 3D data file.
+        index: This is appended to the filename, indicating this is which iteration.
+        dir_path: Path to the directory where the temporary files (z-slices) will be saved.
+        z_index: The index of the z-coordinate column, e.g. if z_index = 2, the z-coordinate is at the 3rd column.
+        first_line: (Optional) If provided, use this line as the first line for this iteration. Without this parameter, the line to cause the break will not be recorded in any file, that's not what we want.
+    
+    Returns:
+        bool: True if the end of the file is reached, otherwise False.
+        str: The line that caused the break, so it can be passed to the next iteration.
     '''
-    '''The code is simular to mapper_2D, so the comment will not be as detailed s the previous function.'''
-    # From slicing, know what vars to be plotted
-    var_ranges, _ = preliminary_processing.get_info(filepath)
+    # Prepare the output file path
+    base_filename = os.path.basename(file.name).rsplit('.', 1)[0]
+    output_filename = f"{base_filename}_{str(index)}.tmp"
+    output_filepath = os.path.join(dir_path, output_filename)
+
+    # Create a new file in this iteration
+    with open(output_filepath, 'w') as outfile:
+        if first_line is None:
+            first_line = file.readline().strip()  # Read the first line if not provided
+
+        if not first_line:  # If the file is empty or we reached EOF
+            return True, None
+
+        outfile.write(first_line + '\n')  # Write the first line to the new file
+        z_value = first_line.split()[z_index]  # Get the z-coordinate from the first line
+
+        # Process subsequent lines
+        for line in file:
+            line = line.strip()
+            current_z_value = line.split()[z_index]
+
+            if current_z_value == z_value:
+                outfile.write(line + '\n')
+            else:
+                return False, line  # Return the current line as it caused the break
+
+    # If we processed all lines with the same z-coordinate, return success
+    return True, None
+
+
+def mapper_z_slice(filepath:str, resolution:list, var_ranges: dict, use_comma:bool = False) -> pd.DataFrame:
+    '''
+        Interpolates the z-slice data (output from okc_splitter()) into a pandas DataFrame, using regular grid spacing.
+
+        Args:
+            filepath: The path to the file containing the z-slice data.
+            resolution: A list specifying the grid resolution as [x_res, y_res].
+            use_comma: A boolean indicating whether the original file uses commas as delimiters. Defaults to False.
+            var_ranges: A dictionary containing the column titles and their ranges, used to identify which columns represent the coordinates.
+                Because the program only care the range of x and y coordinates, although ranges of other variables are different from the 3D data, it doesn't matter.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the interpolated data for the z-slice.
+    '''
     
     # Prepare mesh grid
-    grid_x, grid_y, grid_z = (np.linspace(var_ranges[var][0], var_ranges[var][1], res) for var, res in zip(['x', 'y', 'z'], resolution)) # Generate 3 arrays of coords
-    mesh_grid_x, mesh_grid_y, mesh_grid_z = np.meshgrid(grid_x, grid_y, grid_z) # Repeat elements in grid_x, y, and z
-    coordinates = np.stack((mesh_grid_x.ravel(), mesh_grid_y.ravel(), mesh_grid_z.ravel()), axis=-1) # Flatten mesh_grid_x, y and z, and stack them.
+    grid_1, grid_2 = (np.linspace(var_ranges[var][0], var_ranges[var][1], res) for var, res in zip(['x', 'y'], resolution)) # Generate 2 arrays of coords
+    mesh_grid_1, mesh_grid_2 = np.meshgrid(grid_1, grid_2) # Repeat elements in grid_1 and grid_2
+    coordinates = np.stack((mesh_grid_1.ravel(), mesh_grid_2.ravel()), axis=-1) # Flatten mesh_grid_1 and 2 and stack them.
 
     # Define columns to read
-    columns_to_read = [col for col in var_ranges.keys() if col not in 'time_derivative/conn_based/mesh_time'] # Excluding
+    columns_to_read = [col for col in var_ranges.keys() if col not in ['time_derivative/conn_based/mesh_time']] # Excluding time
     indices = [i for i, var in enumerate(var_ranges.keys()) if var in columns_to_read]
     interpolated_results = []
-
+    
     # I planned to make the data process be in batches, but it shows that then it can't deal with the boundry of batches,
-    # making the data blurred and behaving strangely. So I deleted the batch part.
-    batch = pd.read_csv(filepath, skiprows=1+2*len(var_ranges), delimiter=r'\s+|,', header=None, names=columns_to_read, usecols=indices, engine='python')
-    '''
-    Skip header lines.
-    Delimiters are whitespace or comma.
-    No header present in the CSV.
-    Provide column names for the data.
-    Only read data in indicated indices.
-    Avoid error message, since regular expression is used.
-    '''
-    batch.fillna(0, inplace=True)# Replace NaNs with zero
-    batch.drop_duplicates(subset=['x', 'y', 'z'], inplace=True)
-    points = batch[['x', 'y', 'z']].values
-    interpolated_batch = np.full((coordinates.shape[0], len(columns_to_read)), np.nan)
+    # making the data blurred and behaving strangely. So I deleted the batch part. Still, I kept the name `batch`.
+    if not use_comma:
+        batch = pd.read_csv(filepath, sep=r'\s+', header=None, names=columns_to_read, usecols=indices, engine='c')     
+    else:
+        batch = pd.read_csv(filepath, header=None, names=columns_to_read, usecols=indices, engine='c')     
+    batch.fillna(0, inplace=True) # Replace NaNs with zero
+    points = batch[['x','y']].values
+    interpolated_batch = np.full((coordinates.shape[0], len(columns_to_read)), np.nan) # Create an empty array to store interpolated values.
 
-    # Interpolation for each column
     for i, col in enumerate(columns_to_read):
         values = batch[col].values
-        grid_data = scipy.interpolate.griddata(points, values, coordinates, method='linear', fill_value=np.nan)# For grid points out of the range, add NaN as their value (For instance, when slicing direction is z.)
+        # For grid points out of the range, add NaN as their value (For instance, when slicing direction is z.)
+        # Filling value with NaNs may cause many problems to fix later, 
+        # but it will have bugs, if you fill in other values, for reason unknown.
+        interpolator = scipy.interpolate.LinearNDInterpolator(points, values)
+        grid_data = interpolator(coordinates)
+        grid_data[np.isnan(grid_data)] = np.nan
         interpolated_batch[:, i] = grid_data
-    # Store interpolated results in a list
     interpolated_results.append(interpolated_batch)
-    
+
     # Concatenate all interpolated results and convert them into a DataFrame
     final_data = np.concatenate(interpolated_results, axis=0)
     interpolated_df = pd.DataFrame(final_data, columns=columns_to_read)
     interpolated_df = interpolated_df.reset_index(drop=True)
+    
     # Return the final interpolated DataFrame
-    print("Finished mapping this data to your specified resolution.")
+    print("Finished mapping this z slice to the specified resolution.")
     return interpolated_df
+
+
+def mapper_3D(filepath: str, resolution: list, use_comma: bool = False):
+    '''
+    This function processes a large 3D data file by splitting it into z slices, interpolating each slice, and saving the results.
+    The original slices are saved as .tmp files, and the interpolated data is saved as .csv files.
+
+    Args:
+        filepath: Path to the original file.
+        resolution: Resolution of the interpolation in the form [x_res, y_res, z_res].
+        use_comma: Whether the original file uses commas as delimiters. Defaults to False.
+
+    Returns:
+        None
+    '''
+    # Get the base directory and filename (without the .okc extension)
+    base_dir = "/".join(filepath.split('/')[:-1])
+    filename_without_ext = filepath.split('/')[-1].replace('.okc', '')
+
+    # Create directories for temporary files and interpolated CSVs
+    tmp_dir = f"{base_dir}/{filename_without_ext}_tmp"
+    '''csv_dir = f"{base_dir}/{filename_without_ext}_tmp_csv" '''
+    os.makedirs(tmp_dir, exist_ok=True)
+    ''' os.makedirs(csv_dir, exist_ok=True)'''
+
+    # Get the variable ranges from the file, find which column represents z coordinate
+    var_ranges, _ = preliminary_processing.get_info(filepath)
+    z_index = list(var_ranges.keys()).index('z')
+
+    # Split the original file to many little files, each file containing same z coordinates, although different file may have same coordinates
+    with open(filepath, 'r') as file:
+        start_line = 1 + 2 * len(var_ranges)  # Start after the metadata and ranges
+        index = 0
+        first_line = None # "lookahead" approach
+        for _ in range(start_line):
+            next(file)
+        while True:
+            # Split one z slice into one temp file
+            end_of_file, first_line = okc_splitter(file, index, tmp_dir, z_index, first_line)
+            if end_of_file:  # Ensure we break if we reached the end
+                break
+            index += 1 # Update start_line and index for the next slice
 
 
 def mapper(datas_object:preliminary_processing.Datas, filepath:str, resolution:list) -> pd.DataFrame:

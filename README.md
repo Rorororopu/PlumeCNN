@@ -52,7 +52,7 @@ The last one is a movie (Sadly, currently not in use). If you want to output a t
 
 - Open the simulation result in `VisIt`. You can choose to slice the data perpendicular to x/y/z axis. Currently PlumeCNN only supports 3D database and database sliced perpendicular to x, y, or z axis.
 
-- In `VisIt`, Click `File - Export Database`, in `Xmdv` format. The delimiter is whitespace in default. You can also specify to change the delimiter to comma.
+- In `VisIt`, Click `File - Export Database`, in `Xmdv` format. The delimiter is whitespace in default. You can also specify to change the delimiter to comma. However, you have to edit the variable `use_comma` the code to let it be adjusted to your change of delimiter, so this is not recommended.
 
     Below are variables you **must** export, regardless of sequence:
 
@@ -153,7 +153,7 @@ Below explains what are roles of each `*.py` file and how they interact. To see 
 
 4. `mapper.py`
 
-    To simplify the analysis process in [VisIt](https://visit-sphinx-github-user-manual.readthedocs.io/en/v3.2.0/gui_manual/Intro/Installing_VisIt.html), where the grid may not be evenly spaced (with finer grids typically at the container's boundary), this file maps the original data to an evenly spaced table at a user-specified resolution.
+    To simplify the analysis process in [VisIt](https://visit-sphinx-github-user-manual.readthedocs.io/en/v3.2.0/gui_manual/Intro/Installing_VisIt.html), where the grid may not be evenly spaced (with finer grids typically at the container's boundary), this file maps the original data to an evenly spaced table at a user-specified resolution. **Don't set the resolution too high or the code won't generate any result! Usually for Rayleigh number of 1e7, the resolution of [300,300] is high enough.**
 
 5. `analyzer.py`
 
