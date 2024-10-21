@@ -40,6 +40,10 @@ def plot_2D_df(df: pd.DataFrame, param_name:str, path:str=None, cmap:str='viridi
     includes a color gradient to represent values, complete with a title, axis labels, and a color bar.
     The resulting plot is saved to the specified file path.
 
+    Because if you input sliced data of visit, 
+    although the slicing direction may not be z, visit will still convert coordinates into x and y,
+    so the variable to plot will always be x and y, regardless of slicing direction.
+
     Args:
     df: The Pandas dataframe containing coordinates and data.
     param_name: name of the param to plot.
@@ -84,6 +88,90 @@ def plot_2D_df(df: pd.DataFrame, param_name:str, path:str=None, cmap:str='viridi
         return None
     else:
         return fig, ax
+
+
+def plot_3D_to_2D_slice_df(df: pd.DataFrame, direction: str, param_name: str, path: str = None, cmap: str = 'viridis', data_range: list = None, axis_limits: list = None, transparent: bool = False) -> typing.Tuple[plt.Figure, plt.Axes]:
+    '''
+    Generate a 2D scatter plot from a specified parameter in a pandas table. The plot
+    includes a color gradient to represent values, complete with a title, axis labels, and a color bar.
+    The resulting plot is saved to the specified file path.
+
+    Because if you get data slice from MY PlumeCNN code, the coordinate won't change in the table,
+    so we need to specify which two coordinates are needed to plot.
+
+    Args:
+    df: The Pandas dataframe containing coordinates and data.
+    direction: The slicing direction, it can be 'x', 'y' or 'z'. e.g. if the slicing direction is perpendicular to z axis, please input 'z'.
+    param_name: name of the param to plot.
+    path: The path to store the image. If none, the image won't be saved.
+    cmap: The colormap of the image. Choices include:
+        'viridis': Ranges from dark blue to bright yellow. Recommended for data ranging from [0,1].
+        'coolwarm': Ranges from deep blue, white to deep red. Recommended for data ranging from [-1,1].
+    data_range: Optional. The range of data shown in the plot.
+        If specified, values outside this range will be capped to the range limits.
+        If None, the full range of the data will be used.
+    axis_limits: Optional. A list of axis limits for the plot in the form [x_min, x_max, y_min, y_max].
+        If None, the axis limits will be determined automatically from the data.
+        This is needed because slices from the edge of the cylinder will only occupy a small section of the whole region calculated, and we want to have a clearer idea of how big they are.
+    transparent: Boolean. If True, the space outside the scatter plot will be transparent.
+        If False, it will be white.
+
+    Returns:
+    fig: The matplotlib Figure object
+    ax: The matplotlib Axes object
+    '''
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Determine which coordinates to plot based on the direction
+    if direction == 'x':
+        coords = ['y', 'z']
+    elif direction == 'y':
+        coords = ['x', 'z']
+    elif direction == 'z':
+        coords = ['x', 'y']
+    
+    # Extract color data
+    color_data = df[param_name]
+    
+    # Plot data with colormap and range
+    if data_range is not None:
+        sc = ax.scatter(df[coords[0]], df[coords[1]], c=color_data, cmap=cmap, vmin=data_range[0], vmax=data_range[1])
+    else:
+        sc = ax.scatter(df[coords[0]], df[coords[1]], c=color_data, cmap=cmap)
+
+    # Set colorbar
+    cbar = plt.colorbar(sc, label=param_name, ax=ax)
+
+    # Set axis limits if provided
+    if axis_limits is not None:
+        ax.set_xlim(axis_limits[0], axis_limits[1])
+        ax.set_ylim(axis_limits[2], axis_limits[3])
+    else:
+        # Use auto-scaling if no axis limits are provided
+        ax.relim()
+        ax.autoscale()
+
+    # Set axis labels and title
+    ax.set_title(f'Plot of {param_name}')
+    ax.set_xlabel(coords[0])
+    ax.set_ylabel(coords[1])
+
+    # Set transparency
+    if transparent:
+        fig.patch.set_alpha(0.0)
+        ax.patch.set_alpha(0.0)
+    else:
+        fig.patch.set_alpha(1.0)
+        ax.patch.set_facecolor('white')
+
+    # Save or return the figure
+    if path is not None:
+        plt.savefig(path, transparent=transparent)
+        plt.close(fig)
+        return None
+    else:
+        return fig, ax
+
 
 # Not applied in code because FFMPG is not installed on the HPC.
 def create_2D_movie(data_frames: typing.List[analyzer.Data], param_name: str, path: str, fps: int = 30):
