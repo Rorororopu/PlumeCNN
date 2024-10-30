@@ -2,10 +2,9 @@
 
 ## Tasks
 
-1. Interpolation
+1. Streamline
 2. Calculate Gradient
 3. Visualization (scatterplot)
-4. Streamline
 
 ## Problems
 

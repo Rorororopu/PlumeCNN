@@ -1,0 +1,13 @@
+ipykernel
+matplotlib
+numpy
+pandas
+pathlib
+pyvista
+pyvista[jupyter]
+pyvista[plotting]
+pyvista-examples
+scipy
+tensorflow
+trame
+trame-vtk

@@ -100,7 +100,7 @@ The last one is a movie (Sadly, currently not in use). If you want to output a t
 
     `pip install --upgrade pip`
 
-    `pip install matplotlib numpy pandas pathlib scipy tensorflow`
+    `pip install -r requirements.txt`
 
 - `.gitignore` is the file to tell git that which file/directory they don't have to track their version. If you want to use `git` to track your version, please add `<name of your virtual environment>/` to a text file titled `.gitignore`, so that `git` won't sync this folder everytime you commit. Otherwise, this big file will make every commit process insanely slow!
 
@@ -121,9 +121,11 @@ The last one is a movie (Sadly, currently not in use). If you want to output a t
 
 - If you don't want to input the path of files to read everytime you run the program, you could also open the `main.py` and edit the code by yourself.
 
-- The code being commented at `main.py` is proven to be working, for both NN model and CNN model. The UI version hasn't been tested yet, but you can know the logic of the code by viewing them.
+- The code being commented at `main.ipynb` is proven to be working, for both NN model and CNN model. The `main.py` version hasn't been tested yet, but you can know the logic of the code by viewing them.
 
 - If you like to run the code step by step, you could also use [Jupyter Notebook](https://jupyter.org) to run the program. If you are using VSC, just install the extension for it and you can simply use it without oprning a browser tab! The filename extension for Jupyter Notebook is `.ipynb`.
+
+- For reason unknown, when you first creating the environment and run the code, the classification result `is_boundary` will be NaN. Don't panic, just reopen the VSCode, and rerun it, it will be fine.
 
 ## How it works
 
