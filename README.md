@@ -129,15 +129,13 @@ The last one is a movie (Sadly, currently not in use). If you want to output a t
 
 ## How it works
 
-Below explains what are roles of each `*.py` file and how they interact. To see more detail, feel free to look through the codes file and play around with them. There are comments in the code and I'll make my best to make them easy to understand.
+Below explains what are roles of each file and how they interact. To see more detail, feel free to look through the codes file and play around with them. There are comments in the code and I'll make my best to make them easy to understand.
 
-1. `main.py`
+1. `main.py` and `main.ipynb`
 
-    Only this file will interact with you.
+    Only these two files will interact with you.
 
     The rest of the files are only storing functions to call at this file.
-
-    - `main.ipynb` is an example of directly using the code to classify. This is proven to be working.
 
 2. `get_directory_file`
 
@@ -155,7 +153,7 @@ Below explains what are roles of each `*.py` file and how they interact. To see 
 
 4. `mapper.py`
 
-    To simplify the analysis process in [VisIt](https://visit-sphinx-github-user-manual.readthedocs.io/en/v3.2.0/gui_manual/Intro/Installing_VisIt.html), where the grid may not be evenly spaced (with finer grids typically at the container's boundary), this file maps the original data to an evenly spaced table at a user-specified resolution. **Don't set the resolution too high or the code won't generate any result! Usually for Rayleigh number of 1e7, the resolution of [300,300] is high enough.**
+    To simplify the analysis process in [VisIt](https://visit-sphinx-github-user-manual.readthedocs.io/en/v3.2.0/gui_manual/Intro/Installing_VisIt.html), where the grid may not be evenly spaced (with finer grids typically at the container's boundary), this file maps the original data to an evenly spaced table at a user-specified resolution. **Don't set the resolution too high or the code won't generate any result! Usually for Rayleigh number of 1e7, the resolution of [300,300] is the maximum resolution you can run.**
 
 5. `analyzer.py`
 
@@ -172,3 +170,7 @@ Below explains what are roles of each `*.py` file and how they interact. To see 
 7. `visualizer.py`
 
     Read the result of analyzation and output image/movie to the directory user indicated.
+
+8. `requirements.txt`
+
+    The file to record which package to download when first creating an environment.

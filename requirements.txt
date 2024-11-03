@@ -11,3 +11,4 @@ scipy
 tensorflow
 trame
 trame-vtk
+vtk
