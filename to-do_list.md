@@ -17,4 +17,4 @@ If number of seed points is a little more, it can't be correctly analyzed by the
 Somehow, the code have to be run twice to generate a readable result.
 Somehow, even if you just changed the seed of random number, the code won't run.
 Can't export image.
-But Google Chrome is more compatible than Safari.
+But Google Chrome is more compatible than Safari, can open big file.
