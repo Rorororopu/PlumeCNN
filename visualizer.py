@@ -174,7 +174,7 @@ def plot_3D_to_2D_slice_df(df: pd.DataFrame, direction: str, param_name: str, pa
         return fig, ax
 
 
-def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 100, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
+def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 100, terminal_speed: float = 1e-5, cmap: str = 'viridis', axis_limits: list = None):
     '''
     Generate and visualize 2D streamlines from a 3D dataset, projected onto a specified plane,
     and export the visualization as an HTML file. The seed points (starting points) of the streamlines are evenly distributed, with the resolution specified by the user.
@@ -186,8 +186,10 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
         seed_points_resolution: Specifies the resolution for distributing seed points in the format [var1_resolution, var2_resolution], where each element controls the density along the respective variable axis.
         integration_direction (optional): Specify whether the streamline is integrated in the upstream or downstream directions (or both). Options are 'both'(default), 'backward', or 'forward'.
         max_time (optional): What is the maximum integration time of a streamline (100 in default).
-        terminal_speed (optional): When will the intergration stop (1e-5 in default).
+        terminal_speed (optional): When will the integration stop (1e-5 in default).
         cmap (optional): Colormap to use for the visualization. Default is 'viridis'.
+        axis_limits (optional): A list of axis limits for the plot in the form [var1_min, var1_max, var2_min, var2_max].
+            If None, the axis limits will be determined automatically from the data.
     '''
 
     # Suppress all VTK warnings and errors
@@ -209,7 +211,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
         vel1 = 'x_velocity'
         vel2 = 'z_velocity'
         view_method = 'view_xz'
-    elif direction == 'z':
+    elif direction == 'x':
         coord1 = 'y'
         coord2 = 'z'
         vel1 = 'y_velocity'
@@ -265,7 +267,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     grid = pv.StructuredGrid(x_grid_3d, y_grid_3d, z_grid_3d)
 
     # Flatten the velocity grids for use in the structured grid's point data
-    u_flat = u_grid.ravel(order='F') # in Fortran's format
+    u_flat = u_grid.ravel(order='F')  # in Fortran's format
     v_flat = v_grid.ravel(order='F')
 
     # Combine velocity components into a single array and assign to the grid
@@ -278,7 +280,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
 
     grid.point_data['velocity'] = velocity
 
-    # Step 3: Generate streamlines from seed points(initial points)
+    # Step 3: Generate streamlines from seed points (initial points)
     # Define seed points across the flow domain
     seed_coord1, seed_coord2 = np.meshgrid(
         np.linspace(coord1_values[0], coord1_values[-1], seed_points_resolution[0]),
@@ -356,8 +358,38 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
         grid='front'  # Display the grid in front of the scene
     )
 
+    # Adjust axis limits by adding an invisible box
+    if axis_limits is not None:
+        var1_min, var1_max, var2_min, var2_max = axis_limits
+
+        if direction == 'z':
+            # For 'z' direction, create a box with x and y limits
+            box = pv.Box(bounds=(
+                var1_min, var1_max,  # x bounds
+                var2_min, var2_max,  # y bounds
+                0, 0                # z bounds (since it's a 2D plane at z=0)
+            ))
+        elif direction == 'y':
+            # For 'y' direction, create a box with x and z limits
+            box = pv.Box(bounds=(
+                var1_min, var1_max,  # x bounds
+                0, 0,               # y bounds (since it's a 2D plane at y=0)
+                var2_min, var2_max   # z bounds
+            ))
+        elif direction == 'x':
+            # For 'x' direction, create a box with y and z limits
+            box = pv.Box(bounds=(
+                0, 0,               # x bounds (since it's a 2D plane at x=0)
+                var1_min, var1_max,  # y bounds
+                var2_min, var2_max   # z bounds
+            ))
+
+        # Add the box to the plotter with zero opacity
+        plotter.add_mesh(box, opacity=0.0, show_edges=False)
+
     # Export visualization to an HTML file
     plotter.export_html(output_file)
+
 
 
 # Not applied in code because FFMPG is not installed on the HPC.
