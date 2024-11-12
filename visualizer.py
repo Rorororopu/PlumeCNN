@@ -231,6 +231,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
 
     # Calculate the 'dx' between coordinate values for grid step size
     d_coord1 = np.diff(coord1_values).mean()
+    d_coord2 = np.diff(coord2_values).mean()
 
     # Define grid points in the specified plane for interpolation
     grid_coord1, grid_coord2 = np.meshgrid(coord1_values, coord2_values, indexing='ij')
@@ -252,19 +253,11 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     # Step 2: Create a structured 3D grid for visualization
     # Initialize x, y, z coordinates for the structured grid
     if direction == 'z':
-        x_grid_3d = grid_coord1
-        y_grid_3d = grid_coord2
-        z_grid_3d = np.zeros_like(grid_coord1)
+        grid = pv.StructuredGrid(grid_coord1, grid_coord2, np.zeros_like(grid_coord1))
     elif direction == 'y':
-        x_grid_3d = grid_coord1
-        y_grid_3d = np.zeros_like(grid_coord1)
-        z_grid_3d = grid_coord2
+        grid = pv.StructuredGrid(grid_coord1, np.zeros_like(grid_coord1), grid_coord2)
     elif direction == 'x':
-        x_grid_3d = np.zeros_like(grid_coord1)
-        y_grid_3d = grid_coord1
-        z_grid_3d = grid_coord2
-
-    grid = pv.StructuredGrid(x_grid_3d, y_grid_3d, z_grid_3d)
+        grid = pv.StructuredGrid(np.zeros_like(grid_coord1), grid_coord1, grid_coord2)
 
     # Flatten the velocity grids for use in the structured grid's point data
     u_flat = u_grid.ravel(order='F')  # in Fortran's format
@@ -312,7 +305,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
         vectors='velocity',
         integration_direction=integration_direction,
         max_time=max_time,
-        initial_step_length=d_coord1,
+        initial_step_length=0.5*(d_coord1+d_coord2),
         terminal_speed=terminal_speed
     )
 
@@ -327,7 +320,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
 
     # Color the streamlines by velocity magnitude and set up a scalar bar
     plotter.add_mesh(
-        streamlines.tube(radius=d_coord1 * 0.5),
+        streamlines.tube(radius=0.5 * (d_coord1+d_coord2) * 0.5),
         scalars='velocity_magnitude',
         cmap=cmap,  # Use the colormap specified in the function argument
         scalar_bar_args={'title': 'Velocity Magnitude'}
@@ -391,6 +384,158 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     plotter.export_html(output_file)
 
 
+def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 100, terminal_speed: float = 1e-5, cmap: str = 'viridis', axis_limits: list = None):
+    '''
+    Generate and visualize 2D streamlines from a 3D dataset, projected onto a specified plane,
+    and export the visualization as an HTML file. The seed points (starting points) of the streamlines are evenly distributed, with the resolution specified by the user.
+
+    Args:
+        input_file: Path to the CSV file containing the 3D dataset.
+        output_file: Path to the output HTML file for the visualization.
+        seed_points_resolution: Specifies the resolution for distributing seed points in the format [x_resolution, y_resolution, z_resolution], where each element controls the density along the respective variable axis.
+        integration_direction (optional): Specify whether the streamline is integrated in the upstream or downstream directions (or both). Options are 'both'(default), 'backward', or 'forward'.
+        max_time (optional): What is the maximum integration time of a streamline (100 in default).
+        terminal_speed (optional): When will the integration stop (1e-5 in default).
+        cmap (optional): Colormap to use for the visualization. Default is 'viridis'.
+        axis_limits (optional): A list of axis limits for the plot in the form [x_min, x_max, y_min, y_max, z_min, z_max].
+            If None, the axis limits will be determined automatically from the data.
+    '''
+
+    # Suppress all VTK warnings and errors
+    '''
+    If not, we will get the warning "Unable to factor linear system" for every streamline we plot, although the result is quite good.
+    '''
+    vtk.vtkObject.GlobalWarningDisplayOff()
+
+    # Step 1: Load and prepare data
+    # Read and extract columns to read
+    df = pd.read_csv(input_file)
+    df = df[['x','y','z', 'x_velocity', 'y_velocity', 'z_velocity']].dropna()
+
+    # Extract unique coordinate values, sorted in ascending order
+    x_values = np.sort(df['x'].unique())
+    y_values = np.sort(df['y'].unique())
+    z_values = np.sort(df['z'].unique())
+
+    # Calculate the 'dx' between coordinate values for grid step size
+    d_x = np.diff(x_values).mean()
+
+    # Define grid points in the specified plane for interpolation
+    grid_x, grid_y, grid_z = np.meshgrid(x_values, y_values, z_values, indexing='ij')
+
+    # Prepare data points and velocity components for interpolation
+    points = df[['x', 'y', 'z']].values
+    u_values = df['x_velocity'].values
+    v_values = df['y_velocity'].values
+    w_values = df['z_velocity'].values
+
+    # Interpolate velocity components onto the grid, to eliminate NaN points lying in the dataset
+    '''without this step, NaN points in the grid will make the streamline extremely short'''
+    u_grid = scipy.interpolate.griddata(points, u_values, (grid_x, grid_y, grid_z), method='linear')
+    v_grid = scipy.interpolate.griddata(points, v_values, (grid_x, grid_y, grid_z), method='linear')
+    w_grid = scipy.interpolate.griddata(points, w_values, (grid_x, grid_y, grid_z), method='linear')
+
+    # Replace any NaN values in interpolated data with zeros, to specify the border of the valid data
+    u_grid = np.nan_to_num(u_grid, nan=0.0)
+    v_grid = np.nan_to_num(v_grid, nan=0.0)
+    w_grid = np.nan_to_num(w_grid, nan=0.0)
+
+    # Step 2: Create a structured 3D grid for visualization
+    # Initialize x, y, z coordinates for the structured grid
+    grid = pv.StructuredGrid(grid_x, grid_y, grid_z)
+
+    # Flatten the velocity grids for use in the structured grid's point data
+    u_flat = u_grid.ravel(order='F')  # in Fortran's format
+    v_flat = v_grid.ravel(order='F')
+    w_flat = w_grid.ravel(order='F')
+
+    # Combine velocity components into a single array and assign to the grid
+    grid.point_data['velocity'] = np.column_stack((u_flat, v_flat, w_flat))
+
+    # Step 3: Generate streamlines from seed points (initial points)
+    # Define seed points across the flow domain
+    seed_x, seed_y, seed_z = np.meshgrid(
+        np.linspace(x_values[0], x_values[-1], seed_points_resolution[0]),
+        np.linspace(y_values[0], y_values[-1], seed_points_resolution[1]),
+        np.linspace(z_values[0], z_values[-1], seed_points_resolution[2]),
+    )
+    seed_x = seed_x.ravel()
+    seed_y = seed_y.ravel()
+    seed_z = seed_z.ravel()
+
+    # Combine coordinates to form seed points
+    seed_points = np.column_stack((seed_x, seed_y, seed_z))
+    seed = pv.PolyData(seed_points)
+
+    # Calculate streamlines based on velocity field, starting from the seed points
+    streamlines = grid.streamlines_from_source(
+        source=seed,
+        vectors='velocity',
+        integration_direction=integration_direction,
+        max_time=max_time,
+        initial_step_length=d_x,
+        terminal_speed=terminal_speed
+    )
+
+    # Calculate and add velocity magnitude as a scalar field on streamlines for coloring
+    velocity_vectors = streamlines['velocity']
+    velocity_magnitude = np.linalg.norm(velocity_vectors, axis=1)
+    streamlines['velocity_magnitude'] = velocity_magnitude
+
+    # Step 4: Visualize and export streamlines as HTML
+    plotter = pv.Plotter(off_screen=True)
+    plotter.add_mesh(grid.outline(), color='k')
+
+    # Color the streamlines by velocity magnitude and set up a scalar bar
+    plotter.add_mesh(
+        streamlines.tube(radius=d_x * 0.5),
+        scalars='velocity_magnitude',
+        cmap=cmap,  # Use the colormap specified in the function argument
+        scalar_bar_args={'title': 'Velocity Magnitude'}
+    )
+
+    # Set the view based on the specified direction
+    plotter.isometric()
+
+    # Show grid with axis labels
+    plotter.show_grid(
+        xtitle='X',
+        ytitle='Y',
+        ztitle='Z',
+        grid='front'  # Display the grid in front of the scene
+    )
+
+    # Adjust axis limits by adding an invisible box
+    if axis_limits is not None:
+        var1_min, var1_max, var2_min, var2_max = axis_limits
+
+        if direction == 'z':
+            # For 'z' direction, create a box with x and y limits
+            box = pv.Box(bounds=(
+                var1_min, var1_max,  # x bounds
+                var2_min, var2_max,  # y bounds
+                0, 0                # z bounds (since it's a 2D plane at z=0)
+            ))
+        elif direction == 'y':
+            # For 'y' direction, create a box with x and z limits
+            box = pv.Box(bounds=(
+                var1_min, var1_max,  # x bounds
+                0, 0,               # y bounds (since it's a 2D plane at y=0)
+                var2_min, var2_max   # z bounds
+            ))
+        elif direction == 'x':
+            # For 'x' direction, create a box with y and z limits
+            box = pv.Box(bounds=(
+                0, 0,               # x bounds (since it's a 2D plane at x=0)
+                var1_min, var1_max,  # y bounds
+                var2_min, var2_max   # z bounds
+            ))
+
+        # Add the box to the plotter with zero opacity
+        plotter.add_mesh(box, opacity=0.0, show_edges=False)
+
+    # Export visualization to an HTML file
+    plotter.export_html(output_file)
 
 # Not applied in code because FFMPG is not installed on the HPC.
 def create_2D_movie(data_frames: typing.List[analyzer.Data], param_name: str, path: str, fps: int = 30):
