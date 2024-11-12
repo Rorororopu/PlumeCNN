@@ -174,7 +174,7 @@ def plot_3D_to_2D_slice_df(df: pd.DataFrame, direction: str, param_name: str, pa
         return fig, ax
 
 
-def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction: str, seed_points_resolution: list, cmap: str = 'viridis'):
+def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 100, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
     '''
     Generate and visualize 2D streamlines from a 3D dataset, projected onto a specified plane,
     and export the visualization as an HTML file. The seed points (starting points) of the streamlines are evenly distributed, with the resolution specified by the user.
@@ -184,6 +184,9 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
         output_file: Path to the output HTML file for the visualization.
         direction: The direction to which the plane is perpendicular ('x', 'y' or 'z').
         seed_points_resolution: Specifies the resolution for distributing seed points in the format [var1_resolution, var2_resolution], where each element controls the density along the respective variable axis.
+        integration_direction (optional): Specify whether the streamline is integrated in the upstream or downstream directions (or both). Options are 'both'(default), 'backward', or 'forward'.
+        max_time (optional): What is the maximum integration time of a streamline (100 in default).
+        terminal_speed (optional): When will the intergration stop (1e-5 in default).
         cmap (optional): Colormap to use for the visualization. Default is 'viridis'.
     '''
 
@@ -305,10 +308,10 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     streamlines = grid.streamlines_from_source(
         source=seed,
         vectors='velocity',
-        integration_direction='both',
-        max_time=100,
+        integration_direction=integration_direction,
+        max_time=max_time,
         initial_step_length=d_coord1,
-        terminal_speed=1e-5
+        terminal_speed=terminal_speed
     )
 
     # Calculate and add velocity magnitude as a scalar field on streamlines for coloring
@@ -330,6 +333,28 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
 
     # Set the view based on the specified direction
     getattr(plotter, view_method)()
+
+    # Set axis labels based on the specified direction
+    if direction == 'z':
+        xtitle = 'X'
+        ytitle = 'Y'
+        ztitle = ''
+    elif direction == 'y':
+        xtitle = 'X'
+        ytitle = 'Z'
+        ztitle = ''
+    elif direction == 'x':
+        xtitle = 'Y'
+        ytitle = 'Z'
+        ztitle = ''
+
+    # Show grid with axis labels
+    plotter.show_grid(
+        xtitle=xtitle,
+        ytitle=ytitle,
+        ztitle=ztitle,
+        grid='front'  # Display the grid in front of the scene
+    )
 
     # Export visualization to an HTML file
     plotter.export_html(output_file)
