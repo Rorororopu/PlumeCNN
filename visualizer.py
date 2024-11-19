@@ -383,7 +383,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     plotter.export_html(output_file)
 
 
-def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 100,terminal_speed: float = 1e-5, cmap: str = 'viridis', axis_limits: list = None):
+def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 100, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
     '''
     Generate and visualize 3D streamlines from a 3D dataset,
     and export the visualization as an HTML file.
@@ -396,8 +396,6 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
         max_time (optional): What is the maximum integration time of a streamline (100 in default).
         terminal_speed (optional): When will the integration stop (1e-5 in default).
         cmap (optional): Colormap to use for the visualization. Default is 'viridis'.
-        axis_limits (optional): A list of axis limits for the plot in the form [var1_min, var1_max, var2_min, var2_max, var3_min, var3_max].
-            If None, the axis limits will be determined automatically from the data.
     '''
     # Suppress all VTK warnings and errors
     '''
@@ -405,22 +403,17 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
     '''
     vtk.vtkObject.GlobalWarningDisplayOff()
 
-    # Define coordinate and velocity components based on the specified direction
+    pv.global_theme.allow_empty_mesh = True
 
     # Step 1: Load and prepare data
     # Read and extract columns to read
     df = pd.read_csv(input_file)
-    df = df[['x','y', 'z', 'x_velocity', 'y_velocity', 'z_velocity']].dropna()
+    df = df[['x', 'y', 'z', 'x_velocity', 'y_velocity', 'z_velocity']].dropna()
 
     # Extract unique coordinate values, sorted in ascending order
     x_values = np.sort(df['x'].unique())
     y_values = np.sort(df['y'].unique())
     z_values = np.sort(df['z'].unique())
-
-    # Calculate the 'dx' between coordinate values for grid step size
-    d_x = np.diff(x_values).mean()
-    d_y = np.diff(y_values).mean()
-    d_z = np.diff(z_values).mean()
 
     # Define grid points in the specified plane for interpolation
     grid_x, grid_y, grid_z = np.meshgrid(x_values, y_values, z_values, indexing='ij')
@@ -431,32 +424,25 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
     v_values = df['y_velocity'].values
     w_values = df['z_velocity'].values
 
-    # Interpolate velocity components onto the grid, to eliminate NaN points lying in the dataset
-    '''without this step, NaN points in the grid will make the streamline extremely short'''
+    # Interpolate velocity components onto the grid to eliminate NaN points
     u_grid = scipy.interpolate.griddata(points, u_values, (grid_x, grid_y, grid_z), method='linear')
     v_grid = scipy.interpolate.griddata(points, v_values, (grid_x, grid_y, grid_z), method='linear')
     w_grid = scipy.interpolate.griddata(points, w_values, (grid_x, grid_y, grid_z), method='linear')
 
-    # Replace any NaN values in interpolated data with zeros, to specify the border of the valid data
+    # Replace any NaN values in interpolated data with zeros
     u_grid = np.nan_to_num(u_grid, nan=0.0)
     v_grid = np.nan_to_num(v_grid, nan=0.0)
     w_grid = np.nan_to_num(w_grid, nan=0.0)
 
-    # Step 2: Create a structured 3D grid for visualization
-    # Initialize x, y, z coordinates for the structured grid
-    grid = pv.StructuredGrid(grid_x, grid_y, grid_z)
-
     # Flatten the velocity grids for use in the structured grid's point data
-    u_flat = u_grid.ravel(order='F')  # in Fortran's format
+    u_flat = u_grid.ravel(order='F')  # Fortran order for compatibility
     v_flat = v_grid.ravel(order='F')
     w_flat = w_grid.ravel(order='F')
 
-    # Combine velocity components into a single array and assign to the grid
+    # Combine velocity components into a single array
     velocity = np.column_stack((u_flat, v_flat, w_flat))
 
-    grid.point_data['velocity'] = velocity
-
-    # Step 3: Generate streamlines from seed points (initial points)
+    # Step 2: Generate seed points
     # Define seed points across the flow domain
     x_seed, y_seed, z_seed = np.meshgrid(
         np.linspace(x_values[0], x_values[-1], seed_points_resolution[0]),
@@ -464,66 +450,77 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
         np.linspace(z_values[0], z_values[-1], seed_points_resolution[2]),
     )
 
-    x_seed = x_seed.ravel()
-    y_seed = y_seed.ravel()
-    z_seed = z_seed.ravel()
-
     # Combine coordinates to form seed points
-    seed_points = np.column_stack((x_seed, y_seed, z_seed))
+    seed_points = np.column_stack((x_seed.ravel(order='F'), y_seed.ravel(order='F'), z_seed.ravel(order='F')))
     seed = pv.PolyData(seed_points)
 
-    # Calculate streamlines based on velocity field, starting from the seed points
+    # Step 3: Create the PyVista grid
+
+    # Create StructuredGrid
+    grid = pv.StructuredGrid()
+
+    # Set dimensions
+    grid.dimensions = grid_x.shape
+
+    # Create points array
+    points_array = np.column_stack((
+        grid_x.ravel(order='F'),
+        grid_y.ravel(order='F'),
+        grid_z.ravel(order='F')
+    ))
+
+    # Assign points to grid
+    grid.points = points_array
+
+    # Assign velocity vectors to grid
+    grid['vectors'] = velocity
+
+    # Step 4: Generate streamlines
+
+    # Generate streamlines
     streamlines = grid.streamlines_from_source(
-        source=seed,
-        vectors='velocity',
+        seed,
+        vectors='vectors',
         integration_direction=integration_direction,
         max_time=max_time,
-        initial_step_length=0.33*(d_x+d_y+d_z),
-        terminal_speed=terminal_speed
+        terminal_speed=terminal_speed,
+        compute_vorticity=False
     )
 
-    # Calculate and add velocity magnitude as a scalar field on streamlines for coloring
-    velocity_vectors = streamlines['velocity']
-    velocity_magnitude = np.linalg.norm(velocity_vectors, axis=1)
-    streamlines['velocity_magnitude'] = velocity_magnitude
+    # Step 5: Visualize and save the output
 
-    # Step 4: Visualize and export streamlines as HTML
+    # Create a PyVista plotter object with offscreen rendering
     plotter = pv.Plotter(off_screen=True)
     plotter.add_mesh(grid.outline(), color='k')
 
-    # Color the streamlines by velocity magnitude and set up a scalar bar
-    plotter.add_mesh(
-        streamlines.tube(radius=0.33*(d_x+d_y+d_z) * 0.5),
-        scalars='velocity_magnitude',
-        cmap=cmap,  # Use the colormap specified in the function argument
-        scalar_bar_args={'title': 'Velocity Magnitude'}
-    )
+    # Add streamlines to the plotter
+    plotter.add_mesh(streamlines, scalars='vectors', cmap=cmap, scalar_bar_args={'title': 'Velocity Magnitude'})
 
-    # Show grid with axis labels
+    # Set up visualization properties
+    plotter.add_axes()  # Add axes to the scene
+
     plotter.show_grid(
         xtitle='X',
         ytitle='Y',
-        ztitle='Z',
+        ztitle="Z",
         grid='front'  # Display the grid in front of the scene
     )
 
-    # Adjust axis limits by adding an invisible box
-    if axis_limits is not None:
-        var1_min, var1_max, var2_min, var2_max, var3_min, var3_max = axis_limits
+    # Add camera view adjustment for better visualization
+    plotter.view_isometric()  # Isometric view for better 3D visualization
 
-        box = pv.Box(bounds=(
-            var1_min, var1_max,  # x bounds
-            var2_min, var2_max,  # y bounds
-            var3_min, var3_max   # z bounds 
-        ))
-
-        # Add the box to the plotter with zero opacity
-        plotter.add_mesh(box, opacity=0.0, show_edges=False)
-
-    # Set the view
-    plotter.view_isometric()
-
+    # Save the visualization to an HTML file
     plotter.export_html(output_file)
+
+
+
+    '''# Color the streamlines by velocity magnitude and set up a scalar bar
+    plotter.add_mesh(
+        streamlines.tube(radius=0.5 * (d_coord1+d_coord2) * 0.5),
+        scalars='velocity_magnitude',
+    )
+    '''
+
 
 
 # Not applied in code because FFMPG is not installed on the HPC.
