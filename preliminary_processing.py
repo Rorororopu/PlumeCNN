@@ -51,7 +51,6 @@ def get_info(filepath: str) -> typing.Tuple[dict, int]:
     try:
         # Open the file and read lines
         with open(filepath, 'r') as file:
-            print(f"Trying to open the file at {filepath}...")
             lines = file.readlines()
 
     except FileNotFoundError:
@@ -87,8 +86,6 @@ def get_info(filepath: str) -> typing.Tuple[dict, int]:
         print("\033[91mError: The file format is incorrect. Not enough range data or invalid range values found.\033[0m")
         exit(1)
 
-    print(f"Obtained metadata of the file at {filepath}.")
-
     return var_ranges, grid_num
 
 
@@ -119,16 +116,12 @@ def calculate_slicing(var_ranges: dict) -> str:
 
     # Check for slicing
     if xmax == xmin : 
-        print("This data is sliced.")
         return True
     elif ymax == ymin:
-        print("This data is sliced.")
         return True
     elif zmax == zmin:
-        print("This data is sliced.")
         return True
     else:
-        print("This data isn't sliced.")
         return False
 
 
@@ -148,7 +141,6 @@ def get_aspect_ratio(slicing:str, var_ranges: dict) -> float:
         float: aspect ratio.
     '''
     if not slicing:
-        print("Calculating aspect ratio...")
         xmin, xmax = var_ranges['x']
         zmin, zmax = var_ranges['z']
 

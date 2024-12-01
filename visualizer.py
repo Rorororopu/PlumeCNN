@@ -473,19 +473,25 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
     grid.points = points_array
 
     # Assign velocity vectors to grid
-    grid['vectors'] = velocity
+    grid['velocity'] = velocity
 
     # Step 4: Generate streamlines
-
+    d_x = np.diff(x_values).mean()
+    d_y = np.diff(y_values).mean()
     # Generate streamlines
     streamlines = grid.streamlines_from_source(
-        seed,
-        vectors='vectors',
+        source=seed,
+        vectors='velocity',
         integration_direction=integration_direction,
         max_time=max_time,
-        terminal_speed=terminal_speed,
-        compute_vorticity=False
+        initial_step_length=0.5*(d_x+d_y),
+        terminal_speed=terminal_speed
     )
+
+    # Calculate and add velocity magnitude as a scalar field on streamlines for coloring
+    velocity_vectors = streamlines['velocity']
+    velocity_magnitude = np.linalg.norm(velocity_vectors, axis=1)
+    streamlines['velocity_magnitude'] = velocity_magnitude
 
     # Step 5: Visualize and save the output
 
@@ -494,15 +500,19 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
     plotter.add_mesh(grid.outline(), color='k')
 
     # Add streamlines to the plotter
-    plotter.add_mesh(streamlines, scalars='vectors', cmap=cmap, scalar_bar_args={'title': 'Velocity Magnitude'})
-
+    plotter.add_mesh(
+        streamlines.tube(radius=0.5 * (d_x+d_y) * 0.5),
+        scalars='velocity_magnitude',
+        cmap=cmap,  # Use the colormap specified in the function argument
+        scalar_bar_args={'title': 'Velocity Magnitude'}
+    )
     # Set up visualization properties
     plotter.add_axes()  # Add axes to the scene
 
     plotter.show_grid(
         xtitle='X',
         ytitle='Y',
-        ztitle="Z",
+        ztitle='Z',
         grid='front'  # Display the grid in front of the scene
     )
 
@@ -511,15 +521,6 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
 
     # Save the visualization to an HTML file
     plotter.export_html(output_file)
-
-
-
-    '''# Color the streamlines by velocity magnitude and set up a scalar bar
-    plotter.add_mesh(
-        streamlines.tube(radius=0.5 * (d_coord1+d_coord2) * 0.5),
-        scalars='velocity_magnitude',
-    )
-    '''
 
 
 

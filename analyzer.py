@@ -3,7 +3,7 @@ Doing calculations like gradient, vorticity and multiplication of variables.
 
 Each data file will be stored in a class called `Data(self, path)`, which have the following properties:
     self.df: The Pandas dataframe (a table) of that file
-    self.time: The time value of that file
+    self.time: The time value of that file. If time is not included, it will be None.
     self.var_ranges: A dictionary in format {varname:[min, max], ...}. Time and x, y, z elements in this dict are deleted.
     self.resolution: a list in format [resol1, resol2(, maybe resol3)], corresponding to x, y, and z coordinates.
 
@@ -61,7 +61,6 @@ class Data(preliminary_processing.Datas):
         max_vals = np.array([self.var_ranges[var_name][1] for var_name in var_names])
         
         # Calculate ranges and replace any zero ranges with 1 to avoid division by zero
-        print("Regularizing parameters...")
         ranges = max_vals - min_vals
         ranges[ranges == 0] = 1
 
@@ -107,8 +106,6 @@ class Data(preliminary_processing.Datas):
                 (self.x_range[1] - self.x_range[0]) / self.resolution[0],
                 (self.y_range[1] - self.y_range[0]) / self.resolution[1]
             ])
-
-        print(f"Converting the {var} data to multi-dimensional array...")
 
         # Drop NaN values and extract coordinates and variable data
         valid_data = self.df.dropna(subset=coord_cols)
@@ -157,10 +154,8 @@ class Data(preliminary_processing.Datas):
             # convert to numpy array without coordinate data
             grid = self.pandas_to_numpy(var)
             # Compute gradients
-            print(f"Calculating the gradient of {var}...")
             grad_y, grad_x = np.gradient(grid, edge_order=2)
             gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
-            print("Finished calculating gradient.")
             # Get the coordinate of data
             arrays = {col_var: self.df[col_var].values for col_var in coord_cols}
             # Converting to numpy array for future operation
@@ -180,10 +175,8 @@ class Data(preliminary_processing.Datas):
         else: # 2D
             # The code is similar to 3D case, so the comment won't be as detailed as 3D case.
             grid = self.pandas_to_numpy(var)
-            print(f"Calculating the gradient of {var}...")
             grad_x, grad_y, grad_z = np.gradient(grid, edge_order=1)
             gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2 + grad_z**2)
-            print("Finished calculating gradient.")
             # Get the coordinate of data
             arrays = {col_var: self.df[col_var].values for col_var in coord_cols}
             # Converting to numpy array
@@ -220,7 +213,8 @@ class Data(preliminary_processing.Datas):
         var_ranges, _ = preliminary_processing.get_info(path)
 
         self.time = mapper.get_time(var_ranges) # Record time. If the time is not outputed, the result will be None.
-        var_ranges.pop("time_derivative/conn_based/mesh_time") # drop time
+        if self.time != None:
+            var_ranges.pop("time_derivative/conn_based/mesh_time") # drop time column if it has
         var_ranges.pop('x') # Remove x, y, and z
         var_ranges.pop('y')
         var_ranges.pop('z')

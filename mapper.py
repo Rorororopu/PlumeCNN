@@ -82,7 +82,6 @@ def get_time(var_ranges: dict) -> float:
         return None
     
     time = time_range[0]
-    print("Obtain the time for this data.")
     return time
 
 
@@ -265,7 +264,6 @@ def mapper_2D(filepath: str, resolution: list, use_comma: bool = False) -> pd.Da
     interpolated_df = interpolated_df.reset_index(drop=True)
     
     # Return the final interpolated DataFrame
-    print("Finished mapping this data to your specified resolution.")
     return interpolated_df
 
 

@@ -16,7 +16,7 @@ So what we do is to first interpolate z-slice, then interpolate y slice.
 If number of seed points is a little more, it can't be correctly analyzed by the browser.
 Somehow, the code have to be run twice to generate a readable result.
 Somehow, even if you just changed the seed of random number, the code won't run.
-Can't export image.
+Can't export image, because Bletchley can't render the large dataset we have.
 But Google Chrome is more compatible than Safari, can open big file.
 
 make movie
