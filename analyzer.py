@@ -197,13 +197,21 @@ class Data(preliminary_processing.Datas):
 
     def df_process(self):
         '''Apply the funciton described above'''
-        self.normalize('temperature', [-1,1])
-        self.normalize('velocity_magnitude', [0,1])
-        self.normalize('z_velocity', [-1,1])
-        self.calculate_gradients('temperature')
-        self.calculate_gradients('velocity_magnitude')
-        self.calculate_gradients('z_velocity')
-
+        if 'temperature' in self.df.columns:
+            self.normalize('temperature', [-1,1])
+            self.calculate_gradients('temperature')
+        if 'velocity_magnitude' in self.df.columns:
+            self.normalize('velocity_magnitude', [0,1])
+            self.calculate_gradients('velocity_magnitude')
+        if 'x_velocity' in self.df.columns:
+            self.normalize('x_velocity', [-1,1])
+            self.calculate_gradients('x_velocity') # Used for testing
+        if 'y_velocity' in self.df.columns:
+            self.normalize('y_velocity', [-1,1])
+            self.calculate_gradients('y_velocity')
+        if 'z_velocity' in self.df.columns:
+            self.normalize('z_velocity', [-1,1])
+            self.calculate_gradients('z_velocity')
 
     def __init__(self, path:str, resolution:list = None, paths:list = None):
         if paths == None:

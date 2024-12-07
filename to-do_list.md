@@ -17,6 +17,10 @@ If number of seed points is a little more, it can't be correctly analyzed by the
 Somehow, the code have to be run twice to generate a readable result.
 Somehow, even if you just changed the seed of random number, the code won't run.
 Can't export image, because Bletchley can't render the large dataset we have.
-But Google Chrome is more compatible than Safari, can open big file.
+But Google Chrome is more compatible than Safari, because it can open big file.
 
-make movie
+3. Screenshot
+Even though we have X window in the bletchley(so we are not headless), the process of doing screenshot can kill the jupyter kernel, so the only way to visualize the streamline is by exporting HTML file.
+The manual to deal with headless system is to install Xmdv, but we already have X11!
+
+4. 3D Streamline
