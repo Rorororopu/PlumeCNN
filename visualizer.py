@@ -4,10 +4,12 @@ Using Matplotlib to visualize graphs, output them to PNG image.
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
+import os
 from pathlib import Path # Check if the path exist
 import pandas as pd
 import pyvista as pv
 import scipy.interpolate
+import tqdm # Dyamically show the progress
 import typing
 import vtk
 
@@ -340,7 +342,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
 
     grid_coord1, grid_coord2 = np.meshgrid(coord1_values, coord2_values, indexing='ij')
 
-    # Step 2: Create a structured 3D grid for visualization
+    # Create a structured 3D grid for visualization
     # Initialize x, y, z coordinates for the structured grid
     if direction == 'z':
         grid = pv.StructuredGrid(grid_coord1, grid_coord2, np.zeros_like(grid_coord1))
@@ -359,7 +361,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
 
     grid.point_data['velocity'] = velocity
 
-    # Step 3: Generate streamlines from seed points (initial points)
+    # Generate streamlines from seed points (initial points)
     # Define seed points across the flow domain
     seed_coord1, seed_coord2 = np.meshgrid(
         np.linspace(coord1_values[0], coord1_values[-1], seed_points_resolution[0]),
@@ -400,7 +402,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     velocity_magnitude = np.linalg.norm(velocity_vectors, axis=1)
     streamlines['velocity_magnitude'] = velocity_magnitude
 
-    # Step 4: Visualize and export streamlines as HTML
+    # Visualize and export streamlines as HTML
     plotter = pv.Plotter(off_screen=True)
     plotter.add_mesh(grid.outline(), color='k')
 
@@ -459,13 +461,13 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     plotter.export_html(output_file)
 
 
-def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 100, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
+def plot_3D_streamline(input_folder: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
     '''
     Generate and visualize 3D streamlines from a 3D dataset,
     and export the visualization as an HTML file.
 
     Args:
-        input_file: Path to the CSV file containing the 3D dataset.
+        input_folder: Path to the ARRANGED folder containing sliced CSV files of the 3D dataset.
         output_file: Path to the output HTML file for the visualization.
         seed_points_resolution: Specifies the resolution for distributing seed points in the format [x_resolution, y_resolution, z_resolution], where each element controls the density along the respective variable axis.
         integration_direction (optional): Specify whether the streamline is integrated in the upstream or downstream directions (or both). Options are 'both'(default), 'backward', or 'forward'.
@@ -478,112 +480,6 @@ def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution
     If not, we will get the warning "Unable to factor linear system" for every streamline we plot, although the result is quite good.
     '''
     vtk.vtkObject.GlobalWarningDisplayOff()
-
-    pv.global_theme.allow_empty_mesh = True
-
-    # Step 1: Load and prepare data
-    # Read and extract columns to read
-    df = pd.read_csv(input_file)
-    df = df[['x', 'y', 'z', 'x_velocity', 'y_velocity', 'z_velocity']].dropna()
-
-    # Extract unique coordinate values, sorted in ascending order
-    x_values = np.sort(df['x'].unique())
-    y_values = np.sort(df['y'].unique())
-    z_values = np.sort(df['z'].unique())
-
-    # Define grid points in the specified plane for interpolation
-    grid_x, grid_y, grid_z = np.meshgrid(x_values, y_values, z_values, indexing='ij')
-
-    # Prepare data points and velocity components for interpolation
-    points = df[['x', 'y', 'z']].values
-    u_values = df['x_velocity'].values
-    v_values = df['y_velocity'].values
-    w_values = df['z_velocity'].values
-
-    # Interpolate velocity components onto the grid to eliminate NaN points
-    u_grid = scipy.interpolate.griddata(points, u_values, (grid_x, grid_y, grid_z), method='linear')
-    v_grid = scipy.interpolate.griddata(points, v_values, (grid_x, grid_y, grid_z), method='linear')
-    w_grid = scipy.interpolate.griddata(points, w_values, (grid_x, grid_y, grid_z), method='linear')
-
-    # Replace any NaN values in interpolated data with zeros
-    u_grid = np.nan_to_num(u_grid, nan=0.0)
-    v_grid = np.nan_to_num(v_grid, nan=0.0)
-    w_grid = np.nan_to_num(w_grid, nan=0.0)
-
-    # Flatten the velocity grids for use in the structured grid's point data
-    u_flat = u_grid.ravel(order='F')  # Fortran order for compatibility
-    v_flat = v_grid.ravel(order='F')
-    w_flat = w_grid.ravel(order='F')
-
-    # Combine velocity components into a single array
-    velocity = np.column_stack((u_flat, v_flat, w_flat))
-
-    # Step 2: Generate seed points
-    # Define seed points across the flow domain
-    x_seed, y_seed, z_seed = np.meshgrid(
-        np.linspace(x_values[0], x_values[-1], seed_points_resolution[0]),
-        np.linspace(y_values[0], y_values[-1], seed_points_resolution[1]),
-        np.linspace(z_values[0], z_values[-1], seed_points_resolution[2]),
-    )
-
-    # Combine coordinates to form seed points
-    seed_points = np.column_stack((x_seed.ravel(order='F'), y_seed.ravel(order='F'), z_seed.ravel(order='F')))
-    seed = pv.PolyData(seed_points)
-
-    # Step 3: Create the PyVista grid
-
-    # Create StructuredGrid
-    grid = pv.StructuredGrid()
-
-    # Set dimensions
-    grid.dimensions = grid_x.shape
-
-    # Create points array
-    points_array = np.column_stack((
-        grid_x.ravel(order='F'),
-        grid_y.ravel(order='F'),
-        grid_z.ravel(order='F')
-    ))
-
-    # Assign points to grid
-    grid.points = points_array
-
-    # Assign velocity vectors to grid
-    grid['velocity'] = velocity
-
-    # Step 4: Generate streamlines
-    d_x = np.diff(x_values).mean()
-    d_y = np.diff(y_values).mean()
-    # Generate streamlines
-    streamlines = grid.streamlines_from_source(
-        source=seed,
-        vectors='velocity',
-        integration_direction=integration_direction,
-        max_time=max_time,
-        initial_step_length=0.5*(d_x+d_y),
-        terminal_speed=terminal_speed
-    )
-
-    # Calculate and add velocity magnitude as a scalar field on streamlines for coloring
-    velocity_vectors = streamlines['velocity']
-    velocity_magnitude = np.linalg.norm(velocity_vectors, axis=1)
-    streamlines['velocity_magnitude'] = velocity_magnitude
-
-    # Step 5: Visualize and save the output
-
-    # Create a PyVista plotter object with offscreen rendering
-    plotter = pv.Plotter(off_screen=True)
-    plotter.add_mesh(grid.outline(), color='k')
-
-    # Add streamlines to the plotter
-    plotter.add_mesh(
-        streamlines.tube(radius=0.5 * (d_x+d_y) * 0.5),
-        scalars='velocity_magnitude',
-        cmap=cmap,  # Use the colormap specified in the function argument
-        scalar_bar_args={'title': 'Velocity Magnitude'}
-    )
-    # Set up visualization properties
-    plotter.add_axes()  # Add axes to the scene
 
     plotter.show_grid(
         xtitle='X',

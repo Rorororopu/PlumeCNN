@@ -9,6 +9,7 @@ pyvista[plotting]
 pyvista-examples
 scipy
 tensorflow
+tqdm
 trame
 trame-vtk
 vtk
