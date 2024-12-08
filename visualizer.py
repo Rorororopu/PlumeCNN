@@ -174,6 +174,116 @@ def plot_3D_to_2D_slice_df(df: pd.DataFrame, direction: str, param_name: str, pa
         return fig, ax
 
 
+def arrange_slice_df(input_file: str, direction:str, output_df: str = None, cubic: bool = True) -> pd.DataFrame:
+    '''
+    Arrange sliced data to prepare for plotting streamlines.
+    Fill empty rows with coordinates to ensure a complete grid of points in a square.
+    For NaN points outside the container, set velocity to 0.
+    For NaN points inside the container, interpolate velocity as needed.
+
+    Note that because even data for 3D are stored in many slices, so it is necessary to specify a slicing direction.
+    Args:
+        input_file: The path of the SLICED CSV file (preprocessed by our PlumeCNN).
+        Direction: Specify the axis to which the slice is perpendicular ('x', 'y', or 'z'). 
+        output_file: If you want to output the arranged data to CSV, please input the desired path of the output file.
+            If None(in default), it will not write any file out.
+        if_cubic: If True (default), the function will process coordinates and velocity components in all directions.
+            If false, Only coordinates and velocity components in the remaining directions will be considered. 
+            The reason why this variable is called 'cubic' is because only a slice representing for a whole cubic data needs this option.
+           
+    Returns:The arranged pandas dataframe, containing coordinate values and velocities in desired directions.
+    '''
+    df = pd.read_csv(input_file)
+    # Read and extract columns to read
+    if direction == 'z':
+        coord1 = 'x'
+        coord2 = 'y'
+        coord3 = 'z'
+        vel1 = 'x_velocity'
+        vel2 = 'y_velocity'
+        vel3 = 'z_velocity'
+    elif direction == 'y':
+        coord1 = 'x'
+        coord2 = 'z'
+        coord3 = 'y'
+        vel1 = 'x_velocity'
+        vel2 = 'z_velocity'
+        vel3 = 'y_velocity'
+    elif direction == 'x':
+        coord1 = 'y'
+        coord2 = 'z'
+        coord3 = 'x'
+        vel1 = 'y_velocity'
+        vel2 = 'z_velocity'
+        vel3 = 'x_velocity'
+
+    if cubic is True:
+        df = df[['x', 'y', 'z', 'x_velocity', 'y_velocity', 'z_velocity']].dropna()
+    else:
+        df = df[[coord1, coord2, vel1, vel2]].dropna()
+
+    # Extract unique coordinate values, sorted in ascending order
+    coord1_values = np.sort(df[coord1].unique())
+    coord2_values = np.sort(df[coord2].unique())
+    # define grid points in the specified plane for interpolation
+    grid_coord1, grid_coord2 = np.meshgrid(coord1_values, coord2_values, indexing='ij')
+    # Prepare data points and velocity components for interpolation
+    points = df[[coord1, coord2]].values
+    u_values = df[vel1].values
+    v_values = df[vel2].values
+    if cubic is True:
+        w_values = df[vel3].values
+    # Interpolate velocity components onto the grid, to eliminate NaN points lying in the dataset
+    '''without this step, NaN points in the grid will make the streamline extremely short'''
+    u_grid = scipy.interpolate.griddata(points, u_values, (grid_coord1, grid_coord2), method='linear')
+    v_grid = scipy.interpolate.griddata(points, v_values, (grid_coord1, grid_coord2), method='linear')
+    if cubic is True:
+        w_grid = scipy.interpolate.griddata(points, w_values, (grid_coord1, grid_coord2), method='linear')
+    # Replace any NaN values in interpolated data with zeros, to specify the border of the valid data
+    u_grid = np.nan_to_num(u_grid, nan=0.0).ravel(order='F')
+    v_grid = np.nan_to_num(v_grid, nan=0.0).ravel(order='F')
+    if cubic is True:
+        w_grid = np.nan_to_num(w_grid, nan=0.0).ravel(order='F')
+    
+    # Prepare the final DataFrame for return
+    if direction == 'z':
+        result_df = pd.DataFrame({
+            'x': grid_coord1.ravel(order='F'),
+            'y': grid_coord2.ravel(order='F'),
+            'x_velocity': u_grid,
+            'y_velocity': v_grid
+        })
+        if cubic is True:
+            result_df['z'] = df[coord3].unique().mean()
+            result_df['z_velocity'] = w_grid
+    elif direction == 'y':
+        result_df = pd.DataFrame({
+            'x': grid_coord1.ravel(order='F'),
+            'z': grid_coord2.ravel(order='F'),
+            'x_velocity': u_grid,
+            'z_velocity': v_grid
+        })
+        if cubic is True:
+            result_df['y'] = df[coord3].unique().mean()
+            result_df['y_velocity'] = w_grid
+    elif direction == 'x':
+        result_df = pd.DataFrame({
+            'y': grid_coord1.ravel(order='F'),
+            'z': grid_coord2.ravel(order='F'),
+            'y_velocity': u_grid,
+            'z_velocity': v_grid
+        })
+        if cubic is True:
+            result_df['x'] = df[coord3].unique().mean()
+            result_df['x_velocity'] = w_grid
+    # Save to CSV if output path is provided
+    if output_df is not None:
+        result_df.to_csv(output_df, index=False)
+
+    # Return the result DataFrame
+    return result_df
+
+
 def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis', axis_limits: list = None):
     '''
     Generate and visualize 2D streamlines from a 3D dataset, projected onto a specified plane,
@@ -204,26 +314,21 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
         coord2 = 'y'
         vel1 = 'x_velocity'
         vel2 = 'y_velocity'
-        view_method = 'view_xy'
     elif direction == 'y':
         coord1 = 'x'
         coord2 = 'z'
         vel1 = 'x_velocity'
         vel2 = 'z_velocity'
-        view_method = 'view_xz'
     elif direction == 'x':
         coord1 = 'y'
         coord2 = 'z'
         vel1 = 'y_velocity'
         vel2 = 'z_velocity'
-        view_method = 'view_yz'
     else:
         raise ValueError("Invalid direction. Choose from 'x', 'y', 'z'.")
-
-    # Step 1: Load and prepare data
-    # Read and extract columns to read
-    df = pd.read_csv(input_file)
-    df = df[[coord1, coord2, vel1, vel2]].dropna()
+    
+    # Load and prepare data
+    df = arrange_slice_df(input_file, direction, cubic=False)
 
     # Extract unique coordinate values, sorted in ascending order
     coord1_values = np.sort(df[coord1].unique())
@@ -233,22 +338,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     d_coord1 = np.diff(coord1_values).mean()
     d_coord2 = np.diff(coord2_values).mean()
 
-    # Define grid points in the specified plane for interpolation
     grid_coord1, grid_coord2 = np.meshgrid(coord1_values, coord2_values, indexing='ij')
-
-    # Prepare data points and velocity components for interpolation
-    points = df[[coord1, coord2]].values
-    u_values = df[vel1].values
-    v_values = df[vel2].values
-
-    # Interpolate velocity components onto the grid, to eliminate NaN points lying in the dataset
-    '''without this step, NaN points in the grid will make the streamline extremely short'''
-    u_grid = scipy.interpolate.griddata(points, u_values, (grid_coord1, grid_coord2), method='linear')
-    v_grid = scipy.interpolate.griddata(points, v_values, (grid_coord1, grid_coord2), method='linear')
-
-    # Replace any NaN values in interpolated data with zeros, to specify the border of the valid data
-    u_grid = np.nan_to_num(u_grid, nan=0.0)
-    v_grid = np.nan_to_num(v_grid, nan=0.0)
 
     # Step 2: Create a structured 3D grid for visualization
     # Initialize x, y, z coordinates for the structured grid
@@ -259,17 +349,13 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     elif direction == 'x':
         grid = pv.StructuredGrid(np.zeros_like(grid_coord1), grid_coord1, grid_coord2)
 
-    # Flatten the velocity grids for use in the structured grid's point data
-    u_flat = u_grid.ravel(order='F')  # in Fortran's format
-    v_flat = v_grid.ravel(order='F')
-
     # Combine velocity components into a single array and assign to the grid
     if direction == 'z':
-        velocity = np.column_stack((u_flat, v_flat, np.zeros_like(u_flat)))
+        velocity = np.column_stack((df[vel1], df[vel2], np.zeros_like(df[vel1])))
     elif direction == 'y':
-        velocity = np.column_stack((u_flat, np.zeros_like(u_flat), v_flat))
+        velocity = np.column_stack((df[vel1], np.zeros_like(df[vel1]), df[vel2]))
     elif direction == 'x':
-        velocity = np.column_stack((np.zeros_like(u_flat), u_flat, v_flat))
+        velocity = np.column_stack((np.zeros_like(df[vel1]), df[vel1], df[vel2]))
 
     grid.point_data['velocity'] = velocity
 
@@ -325,29 +411,19 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
         cmap=cmap,  # Use the colormap specified in the function argument
         scalar_bar_args={'title': 'Velocity Magnitude'}
     )
-
-    # Set the view based on the specified direction
-    getattr(plotter, view_method)()
-
-    # Set axis labels based on the specified direction
     if direction == 'z':
-        xtitle = 'X'
-        ytitle = 'Y'
-        ztitle = ''
+        # Set the view based on the specified direction
+        plotter.view_xy()
     elif direction == 'y':
-        xtitle = 'X'
-        ytitle = 'Z'
-        ztitle = ''
+        plotter.view_xz()
     elif direction == 'x':
-        xtitle = 'Y'
-        ytitle = 'Z'
-        ztitle = ''
+        plotter.view_yz()
 
     # Show grid with axis labels
     plotter.show_grid(
-        xtitle=xtitle,
-        ytitle=ytitle,
-        ztitle=ztitle,
+        xtitle='X',
+        ytitle='Y',
+        ztitle='Z',
         grid='front'  # Display the grid in front of the scene
     )
 
