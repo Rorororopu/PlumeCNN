@@ -3,6 +3,7 @@
 ## Tasks
 
 1. Streamline
+    reason of fail: The data's velocity is too small, so that for some reason, velocity's magnitude can't be calculated.
 2. Calculate Gradient
 3. Visualization (scatterplot)
 
@@ -18,9 +19,12 @@ Somehow, the code have to be run twice to generate a readable result.
 Somehow, even if you just changed the seed of random number, the code won't run.
 Can't export image, because Bletchley can't render the large dataset we have.
 But Google Chrome is more compatible than Safari, because it can open big file.
+The number of seed points also can't be too low like [2,2], to avoid the error message (velocity_magnitude not present). This may be because the interpolated points has repeated, slightly different rows representing same points.
 
 3. Screenshot
 Even though we have X window in the bletchley(so we are not headless), the process of doing screenshot can kill the jupyter kernel, so the only way to visualize the streamline is by exporting HTML file.
 The manual to deal with headless system is to install Xmdv, but we already have X11!
 
 4. 3D Streamline
+tolerance of error
+rerun a simulation with higher velocity

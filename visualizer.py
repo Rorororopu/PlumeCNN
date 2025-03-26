@@ -288,7 +288,7 @@ def arrange_slice_df(input_file: str, direction:str, output_df: str = None, cubi
 
 def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis', axis_limits: list = None):
     '''
-    Generate and visualize 2D streamlines from a 3D dataset, projected onto a specified plane,
+    Generate and visualize 2D streamlines from a (sliced) 3D dataset, projected onto a specified plane,
     and export the visualization as an HTML file. The seed points (starting points) of the streamlines are evenly distributed, with the resolution specified by the user.
 
     Args:
@@ -461,7 +461,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     plotter.export_html(output_file)
 
 
-def plot_3D_streamline(input_folder: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
+def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
     '''
     Generate and visualize 3D streamlines from a 3D dataset,
     and export the visualization as an HTML file.
@@ -475,26 +475,7 @@ def plot_3D_streamline(input_folder: str, output_file: str, seed_points_resoluti
         terminal_speed (optional): When will the integration stop (1e-5 in default).
         cmap (optional): Colormap to use for the visualization. Default is 'viridis'.
     '''
-    # Suppress all VTK warnings and errors
-    '''
-    If not, we will get the warning "Unable to factor linear system" for every streamline we plot, although the result is quite good.
-    '''
-    vtk.vtkObject.GlobalWarningDisplayOff()
-
-    plotter.show_grid(
-        xtitle='X',
-        ytitle='Y',
-        ztitle='Z',
-        grid='front'  # Display the grid in front of the scene
-    )
-
-    # Add camera view adjustment for better visualization
-    plotter.view_isometric()  # Isometric view for better 3D visualization
-
-    # Save the visualization to an HTML file
-    plotter.export_html(output_file)
-
-
+    pass
 
 # Not applied in code because FFMPG is not installed on the HPC.
 def create_2D_movie(data_frames: typing.List[analyzer.Data], param_name: str, path: str, fps: int = 30):
@@ -580,3 +561,92 @@ def plot_relevance(df: pd.DataFrame, param1: str, param2: str, path: str):
     # Save the plot
     plt.savefig(path)
     plt.close()
+
+# Not applied because our 3D data is put in separated files, and it's not filling the whole cubical space. 
+def plot_3D_streamline_deprecated(input_file: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
+    '''
+    This function is for read a csv containing all data points in a cubical space and plotting it.
+    '''
+    # Suppress all VTK warnings and errors
+    '''
+    If not, we will get the warning "Unable to factor linear system" for every streamline we plot, although the result is quite good.
+    '''
+    vtk.vtkObject.GlobalWarningDisplayOff()
+
+    '''
+    Following codes are not modified to accomodate the arguments of function!
+    '''
+
+    # Read the CSV file into a DataFrame
+    df = pd.read_csv('test.csv')
+
+    points = df[['x', 'y', 'z']].values
+    velocities = df[['x_velocity', 'y_velocity', 'z_velocity']].values
+
+    # Extract unique coordinate values for each axis (ensure they are sorted)
+    x_vals = np.sort(df['x'].unique())
+    y_vals = np.sort(df['y'].unique())
+    z_vals = np.sort(df['z'].unique())
+
+    # Determine grid dimensions
+    nx, ny, nz = len(x_vals), len(y_vals), len(z_vals)
+
+    # Reshape coordinates
+    x = df['x'].values.reshape((nx, ny, nz))
+    y = df['y'].values.reshape((nx, ny, nz))
+    z = df['z'].values.reshape((nx, ny, nz))
+
+    # Create the StructuredGrid
+    grid = pv.StructuredGrid(x, y, z)
+
+    # Add the velocity vectors
+    grid.point_data['velocity'] = velocities
+
+    seed_x, seed_y, seed_z = np.meshgrid(
+        np.linspace(-0.5, 0.5, 3), # min, max, num
+        np.linspace(-0.5, 0.5, 3),
+        np.linspace(-0.5, 0.5, 3)
+        )
+    seed_x = seed_x.ravel()
+    seed_y = seed_y.ravel()
+    seed_z = seed_z.ravel()
+
+    seed_points = np.column_stack((seed_x, seed_y, seed_z))
+    seed = pv.PolyData(seed_points)
+
+    streamlines = grid.streamlines_from_source(
+        source=seed,
+        vectors='velocity',
+        integration_direction='both',
+        max_time=10,
+        initial_step_length=0.01,
+        terminal_speed=1e-3
+    )
+
+    velocity_vectors = streamlines['velocity']
+    velocity_magnitude = np.linalg.norm(velocity_vectors, axis=1)
+    streamlines['velocity_magnitude'] = velocity_magnitude
+
+    # Visualize and export streamlines as HTML
+    plotter = pv.Plotter(off_screen=True)
+    plotter.add_mesh(grid.outline(), color='k')
+
+
+    plotter.add_mesh(
+        streamlines.tube(radius=0.01),
+        scalars='velocity_magnitude',
+        cmap='viridis',  # Use the colormap specified in the function argument
+        scalar_bar_args={'title': 'Velocity Magnitude'}
+    )
+
+    plotter.view_isometric()
+    # Show grid with axis labels
+    plotter.show_grid(
+        xtitle='X',
+        ytitle='Y',
+        ztitle='Z',
+        grid='front'  # Display the grid in front of the scene
+    )
+
+    plotter.export_html('output_file.html')
+
