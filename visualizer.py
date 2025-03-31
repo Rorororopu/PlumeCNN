@@ -176,7 +176,7 @@ def plot_3D_to_2D_slice_df(df: pd.DataFrame, direction: str, param_name: str, pa
         return fig, ax
 
 
-def arrange_slice_df(input_file: str, direction:str, output_df: str = None, cubic: bool = True) -> pd.DataFrame:
+def arrange_slice_df(input_file: str, direction: str, output_df: str = None, cubic: bool = True) -> pd.DataFrame:
     '''
     Arrange sliced data to prepare for plotting streamlines.
     Fill empty rows with coordinates to ensure a complete grid of points in a square.
@@ -461,7 +461,7 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     plotter.export_html(output_file)
 
 
-def plot_3D_streamline(input_file: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
+def plot_3D_streamline(input_folder: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
     '''
     Generate and visualize 3D streamlines from a 3D dataset,
     and export the visualization as an HTML file.
