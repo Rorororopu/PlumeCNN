@@ -3,7 +3,7 @@
 ## Tasks
 
 1. Streamline
-    reason of fail: The data's velocity is too small, so that for some reason, velocity's magnitude can't be calculated.
+    reason of fail: 1. The data's velocity is too small, so that for some reason, velocity's magnitude can't be calculated. 2. The data has to be a very regular StructuredGrid, otherwise pyVista will be unhappy.
 2. Calculate Gradient
 3. Visualization (scatterplot)
 
