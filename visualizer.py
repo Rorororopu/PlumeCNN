@@ -1,6 +1,7 @@
 '''
 Using Matplotlib to visualize graphs, output them to PNG image.
 '''
+import glob
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
@@ -461,7 +462,99 @@ def plot_3D_to_2D_slice_streamline(input_file: str, output_file: str, direction:
     plotter.export_html(output_file)
 
 
-def plot_3D_streamline(input_folder: str, output_file: str, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.2, terminal_speed: float = 1e-5, cmap: str = 'viridis'):
+def fill_empty_rows(file_path: str) -> pd.DataFrame:
+    '''
+    Fills in the empty rows in a CSV file that represents a Y-slice 2D data grid. 
+    The data is structured in repeating "sandwich" blocks where each block contains:
+        [empty rows] + [non-empty data rows] + [empty rows].
+    The missing rows (empty) occur due to a truncated `x` range. Non-empty data rows have same z coordinate
+    but different x coordinates. The dataset is already on a regular grid, so no interpolation is needed. 
+
+    Args:
+        file_path: Path to the input CSV file containing possibly incomplete 2D slice data.
+
+    Returns:
+        pd.DataFrame:
+            A DataFrame with the same shape as the original but with all empty rows filled in. 
+            Only includes the essential columns: 
+            ['x', 'y', 'z', 'x_velocity', 'y_velocity', 'z_velocity'].
+    '''
+    # Step 1: read df(dataframe)
+    df = pd.read_csv(file_path)
+
+    required_columns = ['x', 'y', 'z', 'x_velocity', 'y_velocity', 'z_velocity']
+    df = df[required_columns]
+
+    df_filled = df.copy()
+    empty_mask = df.isna().all(axis=1) # A list length is num of rows. If all row is empty, corresponding element is True.
+
+    # Step 2: Count initial empty rows
+    first_non_empty_idx = empty_mask.idxmin()
+    num_empty_rows = empty_mask[:first_non_empty_idx].sum()
+
+    # Step 3: Count non-empty rows in the first pack
+    idx = first_non_empty_idx
+    while not empty_mask.iloc[idx]: # iloc[idx]: if that index is True, then True
+        idx += 1
+    num_non_empty_rows = idx - first_non_empty_idx
+
+    # Step 5: Get x_diff from first block of non-empty rows
+    x_vals = df_filled.loc[first_non_empty_idx:idx - 1, 'x'].values #loc: range of row, header, values() is return np array
+    x_diff = np.diff(x_vals).mean()
+
+    # Step 6: Precompute total number of "sandwiches"
+    group_size = num_empty_rows * 2 + num_non_empty_rows
+    total_groups = len(df_filled) // group_size
+
+    for i in range(total_groups):
+        # Calculate indices for each part of the sandwich
+        start_idx = i * group_size
+        mid_idx = start_idx + num_empty_rows
+        end_idx = mid_idx + num_non_empty_rows
+
+        # First and last x values of the current non-empty block
+        block = df_filled.iloc[mid_idx:end_idx]
+        if block['x'].isna().all():
+            continue  # This block has no valid data, skip
+
+        x_first = block['x'].iloc[0]
+        x_last = block['x'].iloc[-1]
+
+        y_first = block['y'].iloc[0]
+        z_first = block['z'].iloc[0]
+        y_last = block['y'].iloc[-1]
+        z_last = block['z'].iloc[-1]
+
+        # Build x values for rows ABOVE the block
+        x_above = x_first - np.arange(num_empty_rows, 0, -1) * x_diff
+        rows_above = pd.DataFrame({
+            'x': x_above,
+            'y': y_first,
+            'z': z_first,
+            'x_velocity': 0.0,
+            'y_velocity': 0.0,
+            'z_velocity': 0.0
+        })
+
+        # Build x values for rows BELOW the block
+        x_below = x_last + np.arange(1, num_empty_rows + 1) * x_diff
+        rows_below = pd.DataFrame({
+            'x': x_below,
+            'y': y_last,
+            'z': z_last,
+            'x_velocity': 0.0,
+            'y_velocity': 0.0,
+            'z_velocity': 0.0
+        })
+
+        # Insert filled data into the copied DataFrame
+        df_filled.iloc[start_idx:mid_idx] = rows_above.values
+        df_filled.iloc[end_idx:end_idx + num_empty_rows] = rows_below.values
+
+    return df_filled
+
+
+def plot_3D_streamline(input_folder: str, output_file: str, point_resolution: list, seed_points_resolution: list, integration_direction: str = 'both', max_time: float = 0.1, terminal_speed: float = 1e-5, cmap: str = 'viridis') -> None:
     '''
     Generate and visualize 3D streamlines from a 3D dataset,
     and export the visualization as an HTML file.
@@ -469,13 +562,92 @@ def plot_3D_streamline(input_folder: str, output_file: str, seed_points_resoluti
     Args:
         input_folder: Path to the ARRANGED folder containing sliced CSV files of the 3D dataset.
         output_file: Path to the output HTML file for the visualization.
+        point_resolution: The resolution of the original data after interpolation. If you set the interpolation at [200,200,200], just input [200,200,200]
         seed_points_resolution: Specifies the resolution for distributing seed points in the format [x_resolution, y_resolution, z_resolution], where each element controls the density along the respective variable axis.
         integration_direction (optional): Specify whether the streamline is integrated in the upstream or downstream directions (or both). Options are 'both'(default), 'backward', or 'forward'.
         max_time (optional): What is the maximum integration time of a streamline (100 in default).
         terminal_speed (optional): When will the integration stop (1e-5 in default).
         cmap (optional): Colormap to use for the visualization. Default is 'viridis'.
     '''
-    pass
+    # in such/a/folder/name_result, the CSVs will be like name_1.csv, name_2.csv, ...
+    # Extract the last part of the path and remove 'result'
+    base_name = os.path.basename(input_folder).replace('result', '')
+    # Create the search pattern
+    pattern = f"{base_name}*.csv"
+    # Get sorted list of matching CSV files
+    csv_files = glob.glob(os.path.join(input_folder, pattern)) # don't use sort
+
+    df_list = [fill_empty_rows(f) for f in csv_files]
+    df = pd.concat(df_list)
+
+    velocities = df[['x_velocity', 'y_velocity', 'z_velocity']].values
+
+    # Determine grid dimensions
+    nx = point_resolution[0]
+    ny = point_resolution[1]-2 # b/c at both very ends of y, the width of x is 0
+    nz = point_resolution[2]
+
+    # Reshape coordinates
+    x = df['x'].values.reshape((nx, ny, nz))
+    y = df['y'].values.reshape((nx, ny, nz))
+    z = df['z'].values.reshape((nx, ny, nz))
+
+    # Create the StructuredGrid
+    grid = pv.StructuredGrid(x, y, z)
+
+    # Add the velocity vectors
+    grid.point_data['velocity'] = velocities
+
+    xmin, xmax, ymin, ymax, zmin, zmax = grid.bounds
+
+    # Create a 5×5×5 grid of seed points across the domain
+    seed_x, seed_y, seed_z = np.meshgrid(
+        np.linspace(xmin, xmax, seed_points_resolution[0]),
+        np.linspace(ymin, ymax, seed_points_resolution[1]),
+        np.linspace(zmin, zmax, seed_points_resolution[2]),
+        indexing='ij'
+    )
+
+    seed_points = np.column_stack((
+        seed_x.ravel(), seed_y.ravel(), seed_z.ravel()
+    ))
+    seed = pv.PolyData(seed_points)
+
+
+    streamlines = grid.streamlines_from_source(
+        source=seed,
+        vectors='velocity',
+        integration_direction=integration_direction,
+        max_time=max_time,
+        initial_step_length=0.01,
+        terminal_speed=terminal_speed
+    )
+    velocity_vectors = streamlines['velocity']
+    velocity_magnitude = np.linalg.norm(velocity_vectors, axis=1)
+    streamlines['velocity_magnitude'] = velocity_magnitude
+
+    # Visualize and export streamlines as HTML
+    plotter = pv.Plotter(off_screen=True)
+    plotter.add_mesh(grid.outline(), color='k')
+
+
+    plotter.add_mesh(
+        streamlines.tube(radius=0.002),
+        scalars='velocity_magnitude',
+        cmap=cmap,  # Use the colormap specified in the function argument
+        scalar_bar_args={'title': 'Velocity Magnitude'}
+    )
+
+    plotter.view_isometric()
+    # Show grid with axis labels
+    plotter.show_grid(
+        xtitle='X',
+        ytitle='Y',
+        ztitle='Z',
+        grid='front'  # Display the grid in front of the scene
+    )
+
+    plotter.export_html(output_file)
 
 # Not applied in code because FFMPG is not installed on the HPC.
 def create_2D_movie(data_frames: typing.List[analyzer.Data], param_name: str, path: str, fps: int = 30):

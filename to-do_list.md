@@ -2,10 +2,8 @@
 
 ## Tasks
 
-1. Streamline
-    reason of fail: 1. The data's velocity is too small, so that for some reason, velocity's magnitude can't be calculated. 2. The data has to be a very regular StructuredGrid, otherwise pyVista will be unhappy.
-2. Calculate Gradient
-3. Visualization (scatterplot)
+1. Calculate Gradient
+2. Visualization (scatterplot)
 
 ## Problems
 
@@ -20,6 +18,7 @@ Somehow, even if you just changed the seed of random number, the code won't run.
 Can't export image, because Bletchley can't render the large dataset we have.
 But Google Chrome is more compatible than Safari, because it can open big file.
 The number of seed points also can't be too low like [2,2], to avoid the error message (velocity_magnitude not present). This may be because the interpolated points has repeated, slightly different rows representing same points.
+reason of fail: 1. The data's velocity is too small, so that for some reason, velocity's magnitude can't be calculated. 2. The data has to be a very regular StructuredGrid, otherwise pyVista will be unhappy.
 
 3. Screenshot
 Even though we have X window in the bletchley(so we are not headless), the process of doing screenshot can kill the jupyter kernel, so the only way to visualize the streamline is by exporting HTML file.
